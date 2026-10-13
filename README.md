@@ -172,3 +172,56 @@ scripts/         início local, migração e testes
 ## Metodologia, custos e fontes
 
 Veja `docs/ARCHITECTURE.md`, `docs/SOURCES.md` e `docs/VERIFICATION.md`. Nenhuma configuração ou pontuação foi calibrada como probabilidade de lucro. Este pacote não é uma recomendação para comprar os tokens exibidos.
+
+
+## v0.2 — Agent Desk: mesa operacional
+
+A tela inicial **Agent Desk** acompanha CRAWLER, SCAN, VET, SOCIAL, SMART,
+JUDGE, CHIEF, SIZE, FILLS e RISK. Os estados vêm do motor Python por WebSocket
+(com polling de recuperação), não de uma animação com números aleatórios.
+Clique em um agente para ver a responsabilidade e suas últimas atividades.
+Animação aparece somente durante execução observada; conexão antiga interrompe-a.
+
+- O token em foco acompanha a posição ou o candidato. O seletor permite investigar outro token.
+- O checklist mostra valor observado, limite e resultado PASS/BLOCK/N/D da avaliação.
+- O CHIEF distingue o melhor candidato, a aprovação e o resultado da tentativa de entrada.
+- O SIZE exibe o último plano da decisão: orçamento, incerteza, custos, stop e alvo estimados.
+- O RISK e o histórico persistente mostram acompanhamento, saídas e bloqueios.
+- Antes da entrada automática, mercado e segurança são reavaliados. Falhas, mudanças
+  de permissões, dados antigos ou mudança de configuração bloqueiam a tentativa.
+- Decisões, planos, parâmetros usados e avaliações ficam no banco existente. Não há migração
+  destrutiva. Os últimos 80 eventos de atividade são transitórios e reiniciam com o processo;
+  decisões, avaliações, ordens e eventos operacionais permanecem persistidos.
+
+### Atualizar uma instalação existente no Codespaces
+
+No terminal que executa o servidor, pressione Ctrl+C. Depois, na raiz do repositório:
+
+```bash
+git pull --ff-only origin main
+bash scripts/start.sh
+```
+
+Abra a porta 8000 e atualize o navegador. Se o Git avisar que existem alterações locais,
+preserve essas alterações antes de resolver o conflito; não utilize reset destrutivo.
+
+### Por que pode continuar sem comprar na simulação?
+
+A política padrão exige concentração resolvida. A amostra de maiores contas SPL do RPC
+não resolve a distribuição por holder nem identifica todos os pools/PDAs: essa checagem
+continua **desconhecida** e, portanto, bloqueia entradas no perfil estrito.
+
+Para um experimento explicitamente menos restritivo, o usuário pode desmarcar
+**Exigir concentração resolvida** em Settings e salvar. Isso muda apenas a pesquisa
+SHADOW: a lacuna permanece visível, o tamanho é reduzido e todas as outras verificações
+continuam ativas. Não garante entradas nem comprova segurança ou rentabilidade.
+A atualização não relaxa essa configuração automaticamente.
+
+### Relação com o vídeo de referência
+
+A implementação segue o fluxo de módulos de coleta, filtro, avaliação, seleção,
+alocação, execução e risco. Não reproduz o código privado do vídeo nem seus resultados.
+O visual usa estações de agentes com estados observados, não uma sala 3D.
+Social é manual e opcional; Ollama é opcional e não autoriza ordens. Não há scraping do X,
+conversas inventadas entre agentes ou execução live. O projeto não opera quando o
+Codespaces está parado.

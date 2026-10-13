@@ -89,7 +89,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
         if lock_file:
             lock_file.close()
 
-    app = FastAPI(title="Solana Alpha Desk", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Solana Alpha Desk", version="0.2.0", lifespan=lifespan)
     app.state.engine, app.state.db = engine, db
     origins = [x.strip() for x in cfg.allowed_origins.split(",")]
     app.add_middleware(
@@ -143,6 +143,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
         events = db.rows(Event, 60)
         return {
             "time": now(),
+            "desk": engine.desk.snapshot(),
             "status": engine.status,
             "mode": "shadow",
             "live_available": False,
@@ -191,7 +192,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "mode": "shadow", "version": "0.1.0"}
+        return {"status": "ok", "mode": "shadow", "version": "0.2.0"}
 
     @app.get("/api/state")
     def state():
@@ -223,10 +224,15 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
 
     @app.put("/api/thresholds")
     def thresholds(value: Thresholds):
+        previous = engine.thresholds.model_dump()
         db.set_config("thresholds", value.model_dump())
         with db.session() as s:
             s.execute(delete(Bench))
-        db.event("settings", "Limites atualizados; bloqueios reiniciados para reavaliação")
+        db.event(
+            "settings",
+            "Limites atualizados; bloqueios reiniciados para reavaliação",
+            data={"previous": previous, "current": value.model_dump()},
+        )
         return value
 
     @app.post("/api/control")

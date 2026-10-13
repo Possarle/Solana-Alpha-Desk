@@ -76,6 +76,14 @@ class SecurityResult(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class GateCheck(BaseModel):
+    stage: str
+    label: str
+    state: Literal["pass", "fail", "unknown", "skipped"]
+    observed: float | str | bool | None = None
+    rule: str
+
+
 class Judgment(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
     market: float = Field(ge=0, le=100)
@@ -94,6 +102,7 @@ class Judgment(BaseModel):
     rules: list[str]
     ai_inferences: list[str] = Field(default_factory=list)
     strategy: str = "independent"
+    checks: list[GateCheck] = Field(default_factory=list)
 
 
 class WalletInput(BaseModel):

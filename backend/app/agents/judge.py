@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 from ..schemas import Judgment, Market, SecurityResult
 from ..thresholds import Thresholds
-from .filter import arithmetic_filter, trades_filter
+from .filter import arithmetic_filter, market_checks, trades_filter
 
 
 class LocalInference(BaseModel):
@@ -54,6 +54,9 @@ def judge(m: Market, s: SecurityResult, t: Thresholds, social: dict, smart: dict
         critical=critical,
         unknown=unknown,
         observed={
+            "thresholds": t.model_dump(),
+            "security_checked_at": s.checked_at,
+            "price": m.price,
             "source": m.source,
             "observed_at": m.observed_at,
             "liquidity": m.liquidity,
@@ -69,6 +72,53 @@ def judge(m: Market, s: SecurityResult, t: Thresholds, social: dict, smart: dict
             "Score heurístico; não representa probabilidade de lucro",
         ],
         strategy=m.discovered_by,
+        checks=[{k: v for k, v in c.items() if k != "reason"} for c in market_checks(m, t)]
+        + [
+            {
+                "stage": "scan",
+                "label": "Fluxo de compras e vendas",
+                "observed": m.sells_5m,
+                "state": "unknown"
+                if m.buys_5m is None or m.sells_5m is None
+                else "fail"
+                if trades_filter(m)
+                else "pass",
+                "rule": "Vendas > 0; compras <= 10×vendas; não garante saída",
+            },
+            {
+                "stage": "vet",
+                "label": "Mint authority",
+                "observed": s.mint_authority,
+                "state": "unknown" if not s.authority_checked else "fail" if s.mint_authority else "pass",
+                "rule": "Permissão revogada",
+            },
+            {
+                "stage": "vet",
+                "label": "Freeze authority",
+                "observed": s.freeze_authority,
+                "state": "unknown" if not s.authority_checked else "fail" if s.freeze_authority else "pass",
+                "rule": "Permissão revogada",
+            },
+            {
+                "stage": "vet",
+                "label": "Concentração top 10 holders",
+                "observed": s.top10_pct,
+                "state": "unknown"
+                if not s.concentration_resolved
+                else "fail"
+                if s.top10_pct is None or s.top10_pct > t.max_top10_pct
+                else "pass",
+                "rule": f"<= {t.max_top10_pct}%; política "
+                + ("estrita" if t.require_resolved_concentration else "pesquisa shadow com incerteza"),
+            },
+            {
+                "stage": "judge",
+                "label": "Score mínimo",
+                "observed": score,
+                "state": "pass" if score >= t.min_score else "fail",
+                "rule": f">= {t.min_score}; não é probabilidade",
+            },
+        ],
     )
 
 

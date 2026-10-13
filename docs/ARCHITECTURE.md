@@ -54,3 +54,26 @@ Telegram envia somente após configuração explícita de bot/chat. O cursor evi
 ## Extensão futura de live
 
 `execution/live.py` define consulta roundtrip, comparação de saldo raw, verificação de confirmação finalizada e protocolo Signer. `submit` sempre falha com PermissionError. Antes de uma futura ativação seriam necessários: signer isolado, inspeção das instruções recebidas, simulação on-chain, allowlist de programas, blockhash/TTL, armazenamento de assinatura e estado submitted/pending/finalized, verificação de saldo por mint, rejeição de extensão não auditada, autorização explícita e testes de recuperação. Esta versão não atende esses requisitos de operação real e não permite ligar live com uma variável.
+
+
+## Agent Desk (v0.2)
+
+`telemetry.py` mantém o estado observado dos 10 módulos de trabalho (inclui o
+coletor CRAWLER além dos agentes de decisão), com horários e chave rede:endereço.
+Não gera progresso artificial. O estado é incluído em `/api/state` e `/ws`.
+O buffer de 80 eventos é transitório e tem IDs únicos por sessão. Um reinício
+não reapresenta uma tarefa antiga como em andamento. O frontend interrompe animações
+se o snapshot está há mais de 20 segundos sem atualização; `prefers-reduced-motion`
+também desliga animações.
+
+O checklist tipado `GateCheck` em `Judgment` reutiliza a mesma função que calcula os
+filtros de mercado. Configurações, preço e timestamp da verificação de segurança são
+incluídos no histórico da avaliação. A seleção armazena contadores do ciclo e, quando
+aplicável, um plano de entrada com custos e gatilhos. Atualizações dos limites gravam
+os valores anteriores e novos no log operacional.
+
+Antes de executar o vencedor, `prepare_entry` consulta o pool novamente, valida o mint,
+refaz a avaliação e recusa dados antigos ou alterações de configuração durante o
+processamento. `SimulationExecution.open` permanece a autoridade atômica sobre a ordem,
+a exposição e o limite de posições. RISK é uma tarefa independente. Nenhuma mensagem
+da interface ou inferência local pode autorizar uma transação real.

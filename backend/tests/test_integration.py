@@ -58,6 +58,7 @@ async def test_end_to_end_fixture_discovery_security_open_close(db, market, secu
     e = app.state.engine
     e.discovery.discover = AsyncMock(return_value=([market], []))
     e.security.analyze = AsyncMock(return_value=security)
+    e.gecko.refresh = AsyncMock(return_value=market)
     result = await e.scan()
     assert result["worth_trading"]
     assert result["execution"]["status"] == "simulated"

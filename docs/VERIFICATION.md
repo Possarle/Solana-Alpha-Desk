@@ -75,3 +75,31 @@ As capturas usadas na inspeção visual eram temporárias e não integram o paco
 - Operação live: ausente e bloqueada; nunca foi executada.
 
 Não existe evidência de lucratividade da estratégia. O padrão estrito de concentração impede entradas quando o dado não está resolvido. Os testes provam propriedades do software nos cenários cobertos, não segurança econômica dos ativos.
+
+## Atualização Agent Desk v0.2 (2026-10-13)
+
+- **60 testes Pytest aprovados**, incluindo revalidação do vencedor com timeout, preço
+  antigo, queda de liquidez, mint divergente e nova autoridade perigosa; nenhuma dessas
+  situações abre posição. Uma simulação aprovada gera plano e avaliação vinculados,
+  entra e encerra por stop mesmo com a descoberta pausada; caixa reconciliado.
+- Ruff e compilação TypeScript/Vite aprovados. A suíte emite um aviso de depreciação
+  do adaptador Starlette/httpx, sem falhas de testes.
+- Chromium com backend real: 13 telas, seleção de agente, detalhes do token, salvamento
+  de configuração, pausa/retomada, WebSocket; desktop 1440 px e mobile 390 px sem
+  overflow horizontal e sem erros JavaScript observados.
+- Diagnóstico público nesta atualização: GeckoTerminal respondeu com 20 pares,
+  DexScreener com 24, Solana RPC respondeu para Wrapped SOL. Jupiter quote-only
+  respondeu com erro do provedor; disponibilidade de rotas não foi comprovada nesta rodada.
+- Uma segunda execução em banco temporário vazio, com scheduler e fontes reais,
+  recebeu 43 mercados. Na janela de observação de aproximadamente 90 segundos,
+  29 tokens estavam persistidos e 28 avaliações haviam sido concluídas, todas rejeitadas;
+  VET ainda processava a próxima consulta. A tela exibiu essa atividade e não apresentou
+  erros JavaScript. A execução foi encerrada ao fim da janela; não é prova de conclusão
+  de todo esse ciclo nem de entradas automáticas com ativos reais.
+- Entrada, saída, planos e bloqueios foram comprovados por fixtures offline identificadas
+  como testes. Nenhuma transação financeira foi assinada ou enviada. Nenhum banco de
+  teste, histórico de mercado ou saldo predefinido adicional foi incluído no Git.
+
+Os limites de concentração, dados sociais manuais, infraestrutura não testada e live
+bloqueado descritos acima continuam válidos. A mesa visual não adiciona cobertura de
+holders que as fontes atuais não fornecem.

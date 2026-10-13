@@ -8,6 +8,7 @@ from .agents.discovery import DiscoveryAgent
 from .agents.filter import arithmetic_filter, trades_filter
 from .agents.judge import explain_with_ollama, judge
 from .agents.pick import pick
+from .agents.position_size import position_size
 from .agents.security import SecurityAgent
 from .agents.smart_money import SmartMoneyAgent
 from .agents.social import SocialAgent
@@ -20,6 +21,7 @@ from .providers.jupiter import Jupiter
 from .providers.market import DexScreener, GeckoTerminal
 from .providers.solana import SolanaRPC
 from .schemas import Market, SecurityResult, now
+from .telemetry import DeskTelemetry
 from .thresholds import Thresholds
 
 logger = logging.getLogger("alpha")
@@ -42,6 +44,7 @@ class Engine:
         self.scan_lock, self.risk_lock = asyncio.Lock(), asyncio.Lock()
         self.tasks, self.last_scan = [], db.config("runtime", {}).get("last_scan")
         self.status = "initializing"
+        self.desk = DeskTelemetry()
         self.telegram = (
             SafeHTTP("Telegram", "https://api.telegram.org", 15)
             if settings.telegram_bot_token.get_secret_value() and settings.telegram_chat_id
@@ -87,6 +90,18 @@ class Engine:
         t = self.thresholds
         key = "solana:" + m.address
         preliminary = arithmetic_filter(m, t) + trades_filter(m)
+        self.desk.emit(
+            "scan",
+            "rejected" if preliminary else "completed",
+            "; ".join(preliminary) if preliminary else "Filtros de mercado atendidos",
+            key,
+        )
+        self.desk.emit(
+            "vet",
+            "skipped" if preliminary else "running",
+            "Bloqueado no filtro inicial" if preliminary else "Consultando permissões e maiores contas",
+            key,
+        )
         sec = SecurityResult(unknown=["On-chain não consultado: bloqueio no filtro inicial"])
         if not preliminary:
             try:
@@ -94,7 +109,27 @@ class Engine:
                     sec = await self.security.analyze(m.address)
             except TimeoutError:
                 sec = SecurityResult(unknown=["Prazo on-chain excedido; análise não aprovada"])
-        judgment = judge(m, sec, t, self.social.analyze(key), self.smart.signals(m.address))
+        if not preliminary:
+            self.desk.emit(
+                "vet",
+                "rejected"
+                if sec.critical
+                else "unknown"
+                if sec.unknown or not sec.authority_checked or not sec.concentration_resolved
+                else "completed",
+                "; ".join(sec.critical or sec.unknown) or "Verificações disponíveis concluídas",
+                key,
+            )
+        social, smart = self.social.analyze(key), self.smart.signals(m.address)
+        self.desk.emit(
+            "social",
+            "unknown",
+            f"{len(social['evidence'])} evidências manuais; autenticidade não auditada",
+            key,
+        )
+        self.desk.emit("judge", "running", "Aplicando regras determinísticas", key)
+        t = self.thresholds
+        judgment = judge(m, sec, t, social, smart)
         if self.settings.ollama_model and not preliminary:
             judgment.ai_inferences = await explain_with_ollama(
                 self.settings.ollama_url, self.settings.ollama_model, judgment
@@ -114,6 +149,14 @@ class Engine:
             )
         if sec.critical:
             self.db.event("security", f"Risco crítico: {m.symbol}", "critical", {"risks": sec.critical})
+        self.desk.emit(
+            "judge",
+            "completed" if judgment.approved else "rejected",
+            "; ".join(judgment.reasons),
+            key,
+            score=judgment.score,
+            evaluation_id=evaluation_id,
+        )
         return judgment, evaluation_id
 
     async def scan(self):
@@ -122,8 +165,11 @@ class Engine:
         async with self.scan_lock:
             if self.controls()["discovery_paused"]:
                 self.status = "paused"
+                self.desk.emit("crawler", "paused", "Descoberta pausada; risco permanece independente")
                 return {"status": "paused"}
             self.status = "scanning"
+            self.desk.start_cycle()
+            self.desk.emit("crawler", "running", "Consultando novos pools e tokens públicos")
             try:
                 markets, errors = await self.discovery.discover()
                 for error in errors:
@@ -173,31 +219,37 @@ class Engine:
                             "copy_discovery", "Falha ao resolver pool de carteira monitorada", "warning"
                         )
                 self.db.set_config("copy_candidates", {"mints": []})
-                evaluated, ids = [], {}
+                self.desk.cycle["received"] = len(markets)
+                self.desk.emit(
+                    "crawler",
+                    "completed" if markets else "error",
+                    f"{len(markets)} mercados recebidos; {len(errors)} falhas de fonte",
+                )
+                evaluated = []
                 for m in markets:
                     self.record_market(m)
                     if self.benches.blocked("solana:" + m.address):
+                        self.desk.cycle["blocked"] += 1
                         continue
                     j, eid = await self.evaluate(m)
                     evaluated.append((m, j))
-                    ids[m.address] = eid
+                    self.desk.cycle["evaluated"] += 1
+                    self.desk.cycle["approved" if j.approved else "rejected"] += 1
                 selection = pick(evaluated)
-                if (
-                    selection["selected"]
-                    and self.thresholds.auto_shadow
-                    and not self.controls()["discovery_paused"]
-                ):
+                self.desk.emit(
+                    "chief",
+                    "completed" if selection["selected"] else "rejected",
+                    selection["message"],
+                    selection["selected"] or selection["best_candidate"],
+                )
+                if selection["selected"]:
                     m, j = next(x for x in evaluated if "solana:" + x[0].address == selection["selected"])
-                    # The first stages are checked again after potentially slow RPC calls.
-                    if arithmetic_filter(m, self.thresholds):
-                        selection["execution"] = {
-                            "status": "rejected",
-                            "reason": "Dados expiraram durante avaliação",
-                        }
-                    else:
-                        selection["execution"] = self.execution.open(
-                            m, j, self.thresholds, f"evaluation:{ids[m.address]}"
-                        )
+                    await self.prepare_entry(m, selection)
+                else:
+                    self.desk.emit("size", "skipped", "Sem candidato aprovado; orçamento não alocado")
+                    self.desk.emit("fills", "skipped", "NO TRADE — nenhuma entrada enviada")
+                self.desk.cycle["finished_at"] = now()
+                selection["cycle"] = dict(self.desk.cycle)
                 with self.db.session() as s:
                     s.add(
                         Decision(
@@ -210,29 +262,142 @@ class Engine:
                 return selection
             except Exception as exc:
                 self.status = "degraded"
+                self.desk.cycle["finished_at"] = now()
+                self.desk.cycle["error"] = type(exc).__name__
+                for name in ("crawler", "scan", "vet", "judge", "chief", "size", "fills"):
+                    if self.desk.agents[name].state == "running":
+                        self.desk.emit(name, "error", "Ciclo interrompido: " + type(exc).__name__)
                 self.db.event("scan_error", "Falha de ciclo: " + type(exc).__name__, "critical")
                 logger.error("scan_failed:" + type(exc).__name__)
                 return {"status": "error"}
+
+    async def prepare_entry(self, candidate: Market, selection: dict):
+        """Refresh and re-evaluate the winner, then submit only to the atomic shadow gate."""
+        key = "solana:" + candidate.address
+        try:
+            self.desk.emit("chief", "running", "Revalidando mercado do candidato antes da entrada", key)
+            provider = self.gecko if candidate.source == "geckoterminal" else self.dex
+            m = await provider.refresh(candidate.pool)
+            if m.address != candidate.address:
+                raise ValueError("Pool retornou outro mint")
+            m.discovered_by = candidate.discovered_by
+            self.record_market(m)
+            j, eid = await self.evaluate(m)
+            selection["entry_evaluation_id"] = eid
+            changed = j.observed.get("thresholds") != self.thresholds.model_dump()
+            if not j.approved or arithmetic_filter(m, self.thresholds) or changed:
+                selection["worth_trading"] = False
+                selection["selected"] = None
+                selection["execution"] = {
+                    "status": "rejected",
+                    "reason": "Configuração mudou durante avaliação"
+                    if changed
+                    else "Revalidação: " + "; ".join(j.reasons),
+                }
+                selection["message"] = "NO TRADE — candidato não passou na revalidação."
+                self.desk.emit("chief", "rejected", selection["message"], key)
+                self.desk.emit("size", "skipped", "Revalidação bloqueou alocação", key)
+            else:
+                t = self.thresholds
+                with self.db.session() as session:
+                    account = session.get(Account, 1)
+                    size = position_size(
+                        float(self.execution.equity(session, account)), float(account.cash), m, j, t
+                    )
+                entry = m.price * (1 + size["slippage_bps"] / 10000)
+                plan = size | {
+                    "token_key": key,
+                    "symbol": m.symbol,
+                    "observed_at": m.observed_at,
+                    "estimated_entry": entry,
+                    "estimated_entry_fee": size["budget"] * t.fee_bps / 10000 + t.fixed_cost_usd,
+                    "stop_trigger": entry * (1 - t.stop_loss_pct / 100),
+                    "take_trigger": entry * (1 + t.take_profit_pct / 100),
+                    "max_hold_minutes": t.max_hold_minutes,
+                    "evaluation_id": eid,
+                    "mode": "shadow",
+                    "thresholds": t.model_dump(),
+                }
+                selection["plan"] = plan
+                self.desk.emit(
+                    "size", "completed", f"Orçamento shadow calculado: ${size['budget']:.2f}", key, **size
+                )
+                if not t.auto_shadow or self.controls()["discovery_paused"]:
+                    selection["execution"] = {
+                        "status": "skipped",
+                        "reason": "Automação desativada ou descoberta pausada",
+                    }
+                else:
+                    self.desk.emit(
+                        "fills", "running", "Verificando limite diário, posição e idempotência", key
+                    )
+                    selection["execution"] = self.execution.open(m, j, t, f"evaluation:{eid}")
+                selection["message"] = (
+                    "Entrada SHADOW registrada; risco acompanha a posição."
+                    if selection["execution"]["status"] == "simulated"
+                    else "Candidato aprovado; entrada bloqueada ou aguardando automação."
+                )
+                self.desk.emit("chief", "completed", selection["message"], key)
+        except Exception as exc:
+            selection["execution"] = {
+                "status": "rejected",
+                "reason": "Revalidação indisponível: " + type(exc).__name__,
+            }
+            selection["worth_trading"] = False
+            selection["selected"] = None
+            selection["message"] = "NO TRADE — não foi possível revalidar o candidato."
+            self.desk.emit("chief", "error", selection["message"], key)
+            self.desk.emit("size", "skipped", "Falha de fonte; nenhuma alocação autorizada", key)
+        result = selection["execution"]
+        self.desk.emit(
+            "fills",
+            "completed" if result["status"] == "simulated" else result["status"],
+            result.get("reason", "Entrada simulada registrada"),
+            key,
+            result=result,
+        )
 
     async def risk_tick(self, forced_reason=None):
         async with self.risk_lock:
             with self.db.session() as s:
                 p = s.scalar(select(Position).where(Position.active_slot == 1))
             if not p:
+                self.desk.emit("risk", "idle", "Sem posição aberta; aguardando próxima verificação")
                 with self.db.session() as s:
                     latest = s.scalar(select(Equity).order_by(Equity.id.desc()).limit(1))
                     account = s.get(Account, 1)
                     if account and (latest is None or now() - latest.at >= 60):
                         s.add(Equity(value=account.cash, data={"mode": "shadow", "open_positions": 0}))
                 return None
+            self.desk.emit("risk", "running", "Atualizando preço e avaliando gatilhos de saída", p.token_key)
             try:
                 provider = self.gecko if p.data["source"] == "geckoterminal" else self.dex
                 m = await provider.refresh(p.data["pool"])
                 if "solana:" + m.address != p.token_key:
                     raise ValueError("Pool retornou outro mint")
                 self.record_market(m)
-                return self.execution.mark_and_manage(m, self.thresholds, forced_reason)
+                result = self.execution.mark_and_manage(m, self.thresholds, forced_reason)
+                self.desk.emit(
+                    "risk",
+                    "blocked" if result and result["status"] == "exit_pending" else "completed",
+                    result.get("reason", "Posição acompanhada")
+                    if result
+                    else "Preço atualizado; nenhum gatilho de saída",
+                    p.token_key,
+                )
+                if result:
+                    self.desk.emit(
+                        "fills",
+                        "completed" if result["status"] == "simulated" else "blocked",
+                        "Saída SHADOW: " + result.get("reason", result["status"]),
+                        p.token_key,
+                        result=result,
+                    )
+                return result
             except Exception as exc:
+                self.desk.emit(
+                    "risk", "error", "Falha de preço; saída pendente e posição reservada", p.token_key
+                )
                 self.db.event(
                     "risk_price",
                     "Falha de preço: posição continua reservada; " + type(exc).__name__,
@@ -248,7 +413,11 @@ class Engine:
                 return {"status": "exit_pending"}
 
     async def wallet_tick(self):
+        self.desk.emit("smart", "running", "Consultando transações de carteiras monitoradas")
         mints = await self.smart.poll()
+        self.desk.emit(
+            "smart", "completed", f"{len(mints)} tokens com sinais neste ciclo; não comprova rentabilidade"
+        )
         previous = self.db.config("copy_candidates", {}).get("mints", [])
         self.db.set_config("copy_candidates", {"mints": list(set(previous) | mints)[:20]})
         for mint in mints:
@@ -285,6 +454,11 @@ class Engine:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                self.desk.emit(
+                    {"wallets": "smart", "discovery": "crawler", "risk": "risk"}.get(name, "crawler"),
+                    "error",
+                    name + ": " + type(exc).__name__,
+                )
                 logger.error(name + ":" + type(exc).__name__)
                 self.db.event("task_error", name + ": " + type(exc).__name__, "warning")
             await asyncio.sleep(interval)
