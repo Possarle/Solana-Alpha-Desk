@@ -1,0 +1,9 @@
+services:
+  alpha:
+    environment:
+      DATABASE_URL: postgresql+psycopg://alpha:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/alpha
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    profiles: []
