@@ -67,13 +67,18 @@ Incluída configuração `.devcontainer/devcontainer.json`. Execute `bash script
 8. Risk Manager pausa entradas, tenta encerrar posições, reconcilia caixa e mostra bloqueios. **Pausar descoberta não pausa o risco.**
 9. Performance apresenta P&L simulado, marcação de posições, curva patrimonial, drawdown, taxa de acerto, expectativa e custos, com exportação de relatório JSON. Sem operações, métricas ficam vazias — não são preenchidas com retornos hipotéticos.
 
-### Por que pode aparecer NO TRADE constantemente?
+### Por que pode aparecer NO TRADE?
 
-A política inicial exige uma concentração de holders resolvida. O RPC gratuito fornece as 20 maiores **contas de tokens**, mas isso não resolve owners completos, PDAs e reservas de pools. No scanner shadow, esta versão mantém `top10_pct=null` e `concentration_resolved=false`; **por isso a política estrita bloqueia entradas**. Isso é deliberado, e não evidência de que o token é inseguro ou seguro.
+NO TRADE é um resultado válido: significa que nenhum token passou por **todas** as etapas. Na v0.4, a concentração de holders passou a ser resolvida no próprio scanner, com o RPC gratuito:
 
-Para estudar a simulação com dados incompletos, você pode desmarcar **Exigir concentração resolvida** em Settings. Essa opção é limitada ao modo shadow; preserva a classificação de risco alto e reduz o orçamento pela metade. Não resolve as lacunas. Outros filtros, mint/freeze authority e score continuam obrigatórios. Mesmo com essa opção, pode não haver oportunidades.
+1. O robô lê as 20 maiores contas do token e quem é o dono de cada uma.
+2. Lê a conta de cada pool conhecido do token. Uma conta só é tratada como **cofre de liquidez** quando o endereço dela aparece dentro dos dados do pool (prova on-chain, não suposição).
+3. Endereços de programa sem vínculo comprovado (travas, curvas de bonding, outros pools) **continuam contados**, por precaução.
+4. O top 10 exibido é um **limite superior**: holders fora da amostra contam com o menor saldo amostrado.
 
-Market cap ausente também bloqueia: FDV é mostrado separadamente e não o substitui. A idade é do pool observado, não necessariamente do mint. A descoberta cobre uma amostra dos lançamentos; não é um firehose de toda a Solana.
+Se o pool não puder ser lido, a concentração continua **desconhecida** e a política estrita bloqueia — como antes. Ainda podem aparecer muitos NO TRADE porque memecoins frequentemente falham em liquidez, market cap confirmado, idade, fluxo de vendas, permissões ou concentração. Isso é o filtro funcionando.
+
+A opção **Exigir concentração resolvida** em Settings continua existindo para pesquisa shadow. Market cap ausente também bloqueia: FDV é mostrado separadamente e não o substitui. A idade é do pool observado, não necessariamente do mint. A descoberta cobre uma amostra dos lançamentos; não é um firehose de toda a Solana.
 
 ## Funcionalidades implementadas
 
@@ -97,12 +102,12 @@ Market cap ausente também bloqueia: FDV é mostrado separadamente e não o subs
 | Área | Limitação explícita |
 |---|---|
 | Segurança | Sem auditoria completa de programas de pools, LP lock/burn, identificação de desenvolvedor, grafo de carteiras ou detecção comprovada de wash trading. |
-| Concentração | Scanner usa amostra incompleta. Preparação live exige enumeração integral reconciliada ao supply e limite superior conservador incluindo pools; RPC pode negar essa consulta. Beneficiários/owners relacionados não identificados. |
+| Concentração | Scanner calcula limite superior com as 20 maiores contas, excluindo só cofres comprovados nos dados do pool. Owners com várias contas pequenas, carteiras relacionadas e desenvolvedor não são identificados. Preparação live continua exigindo enumeração integral reconciliada ao supply. |
 | Token-2022 | Nome das extensões observado quando o RPC retorna jsonParsed, mas transferências não são simuladas por extensão; entradas bloqueadas. |
 | Carteiras | Últimas 10 assinaturas por ciclo; lacunas, histórico incompleto, transferências e posições anteriores afetam o relatório. Operações em SOL nativo sem contraparte USDC ficam não classificadas. Sem ranking de “carteiras lucrativas”. |
 | Social | Formulário de evidências; idade de conta, engajamento, reciclagem e atividade de GitHub não são coletados automaticamente. Score social permanece desconhecido. |
 | Simulação | Não modela ordem em livro, MEV, gas real, todos os custos de ATA/rent, transfer fees, impostos nem garantia de preenchimento. Paper e shadow compartilham um estimador; apenas shadow está exposto no dashboard. |
-| Performance | Comparação “com e sem filtros” indisponível até existir uma coorte contrafactual acompanhada. Sem backtest retrospectivo ou aprendizado que altere parâmetros automaticamente. |
+| Performance | Comparação “com e sem filtros” usa variação **bruta** do preço no mesmo pool (15 min, 1 h, 4 h), sem custos nem garantia de execução. Tokens que somem das fontes contam como “sem dado”, o que pode esconder rugs. Sem backtest retrospectivo; nenhum parâmetro é alterado automaticamente. |
 | LIVE | Terminal supervisionado com montagem restrita, assinatura local, tentativa única de envio e reconciliação. Desativado por padrão; exige configuração explícita e confirmação por ordem. Sem swaps reais validados ou auditoria independente. Stops apenas alertam. Veja [LIVE.md](docs/LIVE.md). |
 | Operação | Uma instância / um worker; não é um cluster de alta disponibilidade. Sem retenção automática de histórico; planeje backups e espaço em disco. |
 | Integrações | Telegram/Ollama preparados mas não testados com credenciais/modelo do usuário; PostgreSQL/Docker não executados neste ambiente. |
@@ -158,7 +163,8 @@ backend/app/
   execution/     shadow, paper e preparação live isolada
   thresholds.py  parâmetros e validações
   schemas.py     contratos Pydantic
-  db.py          15 tabelas persistentes
+  db.py          16 tabelas persistentes
+  cohort.py      coorte contrafactual com/sem filtros
   engine.py      ciclos independentes de descoberta, risco e carteiras
   main.py        API, autenticação e WebSocket
   performance.py relatórios estimados
@@ -207,6 +213,8 @@ preserve essas alterações antes de resolver o conflito; não utilize reset des
 
 ### Por que pode continuar sem comprar na simulação?
 
+> Texto da v0.2, mantido como histórico. Na v0.4 a concentração passou a ser resolvida no scanner; veja a seção NO TRADE acima.
+
 A política padrão exige concentração resolvida. A amostra de maiores contas SPL do RPC
 não resolve a distribuição por holder nem identifica todos os pools/PDAs: essa checagem
 continua **desconhecida** e, portanto, bloqueia entradas no perfil estrito.
@@ -232,3 +240,16 @@ Codespaces está parado.
 Nova página com prontidão, carteira pública, limites, revisão individual, confirmação explícita, posição e histórico reais separados do shadow. O backend persiste assinatura antes do envio, mantém reservas após timeouts e exige finalização/reconciliação para liberar posição.
 
 Para atualizar: pare o servidor, execute `git pull --ff-only origin main` e `bash scripts/start.sh`. Nenhuma configuração é habilitada automaticamente. A migração `0002` adiciona duas tabelas e preserva o histórico existente. Siga [docs/LIVE.md](docs/LIVE.md) para a configuração e limitações; não envie chaves privadas pelo chat.
+
+
+## v0.4 — Concentração resolvida e comparação com/sem filtros
+
+**O que mudou, em linguagem simples:**
+
+- **Concentração de holders no scanner.** Antes, o robô nunca conseguia calcular o top 10 e por isso bloqueava tudo. Agora ele separa cofres de liquidez (comprovados nos dados do pool), carteiras comuns e endereços de programa. Veja na aba **Segurança** do detalhe de cada token.
+- **Com e sem filtros (Performance).** Todo token avaliado — aprovado ou rejeitado — tem o preço anotado na hora da decisão e é medido de novo em 15 min, 1 h e 4 h, sempre no mesmo pool. O painel compara aprovados × todos × rejeitados. Se os filtros ajudam, os aprovados devem ficar acima. A comparação só é marcada como suficiente com pelo menos 10 aprovados medidos em 1 h.
+- **Testes em clone novo.** `bash scripts/test.sh` funciona sem banco pré-existente.
+
+A migração `0003` adiciona a tabela `cohort` e preserva todo o histórico. Para atualizar no Codespaces: pare o servidor (Ctrl+C), rode `git pull --ff-only origin main` e `bash scripts/start.sh`.
+
+A coorte usa no máximo uma consulta ao DexScreener por minuto (até 30 tokens), reaproveitando primeiro os preços que o scanner já coletou. Nenhum dado é preenchido quando a fonte falha.

@@ -41,5 +41,5 @@ def test_supervised_migration_preserves_existing_data(tmp_path, monkeypatch):
             connection.execute(text("SELECT data FROM config WHERE key='preserved'")).scalar()
             == '{"value":17}'
         )
-    assert {"live_orders", "live_book"} <= set(inspect(engine).get_table_names())
+    assert {"live_orders", "live_book", "cohort"} <= set(inspect(engine).get_table_names())
     engine.dispose()

@@ -116,3 +116,25 @@ Esta seção descreve o estado atual e substitui as afirmações históricas de 
 - Consulta do OpenAPI oficial atual do Jupiter confirmou `/swap/v2/build`, `transactionVersion=0` e instruções separadas. O formato de instrução é decodificado com a ABI fixada indicada em `LIVE.md`.
 
 Limitações da verificação: fluxo financeiro testado com respostas simuladas, sem rota/build autenticada nem preenchimento real Jupiter; sem PostgreSQL/Docker/Windows executados; sem auditoria independente. Um aviso de depreciação da dependência Starlette/TestClient permanece nos testes existentes; não houve falha de teste. Cobertura de enumeração de contas depende do RPC, e rotas não suportadas falham fechadas. Testes não demonstram rentabilidade ou segurança integral de protocolos externos.
+
+
+## v0.4 — 14/10/2026
+
+Ambiente: Linux, Python 3.13, Node 22. **113 testes passaram** (103 anteriores + 10 novos) (`pytest -q`), `ruff check` sem erros, build TypeScript/Vite concluído. A suíte agora roda num clone novo, sem `alpha.db` migrado previamente.
+
+Novos cenários verificados (endereços de carteiras e PDAs gerados pelo `solders`, não inventados):
+
+- Cofre cujo endereço aparece nos dados do pool é excluído do top 10; carteiras comuns contam.
+- Conta cujo dono é o próprio pool é liquidez; PDA de outro programa sem vínculo continua contado.
+- Com 20 contas na amostra, o top 10 é limite superior (holders não vistos limitados ao menor saldo amostrado); várias contas do mesmo dono são agrupadas.
+- Pool ilegível mantém a concentração desconhecida e a política estrita bloqueia.
+- Conta pertencente ao mesmo programa DEX do pool é tratada como liquidez e rotulada.
+- Coorte registra aprovados e rejeitados uma única vez por resultado; preço de outro pool é ignorado.
+- Token que some das fontes vira "sem dado" após a janela, nunca -100% ou 0%.
+- Preço já coletado pelo scanner é reaproveitado sem nova requisição.
+- Falha da fonte não preenche retorno.
+- Migração 0003 sobe/desce/sobe e preserva dados existentes.
+
+Interface conferida em navegador headless (desktop 1440 px e celular 390 px) com banco descartável de teste: aba Segurança com distribuição de holders e painel "Com e sem filtros".
+
+**Não verificado neste ambiente:** consultas reais a DexScreener, GeckoTerminal, RPC Solana e Jupiter (a rede do ambiente de desenvolvimento bloqueia esses domínios). A primeira execução no Codespaces é o teste com dados reais; acompanhe a aba Segurança dos tokens e a integridade dos serviços.

@@ -189,3 +189,15 @@ class LiveOrder(Base):
     status: Mapped[str] = mapped_column(String)
     at: Mapped[float] = mapped_column(Float, default=now)
     data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class CohortEntry(Base):
+    """Counterfactual research cohort: every evaluated token, traded or not."""
+
+    __tablename__ = "cohort"
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    token_key: Mapped[str] = mapped_column(String, index=True)
+    at: Mapped[float] = mapped_column(Float)
+    approved: Mapped[bool] = mapped_column()
+    done: Mapped[bool] = mapped_column(default=False, index=True)
+    data: Mapped[dict] = mapped_column(JSON)

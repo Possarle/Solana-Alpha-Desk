@@ -64,6 +64,9 @@ def judge(m: Market, s: SecurityResult, t: Thresholds, social: dict, smart: dict
             "sells_5m": m.sells_5m,
             "buy_acceleration": (m.buys_5m * 12 / m.buys_1h) if m.buys_5m is not None and m.buys_1h else None,
             "smart_wallets": smart.get("wallets", []),
+            "top10_pct": s.top10_pct,
+            "concentration_method": s.concentration_method,
+            "pool_vault_pct": s.pool_pct,
         },
         rules=[
             "market×0.35 + safety×0.35 + momentum×0.20 + concentration×0.10",
@@ -108,7 +111,7 @@ def judge(m: Market, s: SecurityResult, t: Thresholds, social: dict, smart: dict
                 else "fail"
                 if s.top10_pct is None or s.top10_pct > t.max_top10_pct
                 else "pass",
-                "rule": f"<= {t.max_top10_pct}%; política "
+                "rule": f"<= {t.max_top10_pct}% (limite superior, cofres de pool verificados excluídos); política "
                 + ("estrita" if t.require_resolved_concentration else "pesquisa shadow com incerteza"),
             },
             {

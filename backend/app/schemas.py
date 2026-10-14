@@ -69,6 +69,8 @@ class SecurityResult(BaseModel):
     extensions: list[str] = Field(default_factory=list)
     top10_pct: float | None = None
     concentration_resolved: bool = False
+    concentration_method: str | None = None
+    pool_pct: float | None = None
     largest_accounts_pct: float | None = None
     holders: list[dict] = Field(default_factory=list)
     critical: list[str] = Field(default_factory=list)

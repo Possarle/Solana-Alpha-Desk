@@ -1,15 +1,39 @@
+import base64
 from collections import defaultdict
 from decimal import Decimal
 
+from solders.pubkey import Pubkey
+
 from ..providers.solana import SYSTEM_PROGRAM, TOKEN_2022, TOKEN_PROGRAM
 from ..schemas import SecurityResult
+
+
+def _bytes(address: str) -> bytes | None:
+    try:
+        return bytes(Pubkey.from_string(address))
+    except (ValueError, TypeError):
+        return None
+
+
+def _classify_owner(owner: str, owner_account: dict | None, pool_programs: set[str]) -> str:
+    """Never relabel a program address as a person, nor an unknown PDA as liquidity."""
+    if owner_account and owner_account.get("owner") in pool_programs:
+        return "same_dex_program_account"
+    try:
+        on_curve = Pubkey.from_string(owner).is_on_curve()
+    except (ValueError, TypeError):
+        return "unclassified"
+    if owner_account and (owner_account.get("executable") or owner_account.get("owner") != SYSTEM_PROGRAM):
+        return "program_or_pool_candidate"
+    # Off-curve = program-derived (lock, bonding curve, other pool, multisig vault...): counted.
+    return "wallet" if on_curve else "program_or_pool_candidate"
 
 
 class SecurityAgent:
     def __init__(self, rpc):
         self.rpc = rpc
 
-    async def analyze(self, mint: str) -> SecurityResult:
+    async def analyze(self, mint: str, pools: list[str] | None = None) -> SecurityResult:
         r = SecurityResult(
             unknown=[
                 "Identidade e saldo do desenvolvedor",
@@ -54,7 +78,13 @@ class SecurityAgent:
                 r.unknown.append("Maiores contas indisponíveis")
                 return r
             accounts = await self.rpc.multiple([x["address"] for x in largest])
-            owner_amounts = defaultdict(Decimal)
+            r.largest_accounts_pct = float(sum(Decimal(x["amount"]) for x in largest[:10]) / supply * 100)
+            r.notes.append("largest_accounts_pct é top 10 contas SPL brutas; não é top 10 holders.")
+            # Pool linkage is proven only by reading the observed pool accounts themselves.
+            pool_data = await self._pool_accounts(pools or [])
+            pool_programs = {p["program"] for p in pool_data.values()}
+            owner_amounts: dict[str, Decimal] = defaultdict(Decimal)
+            pool_amount = Decimal(0)
             unresolved = False
             for row, account in zip(largest, accounts, strict=True):
                 info_account = (account or {}).get("data", {}).get("parsed", {}).get("info", {})
@@ -62,26 +92,92 @@ class SecurityAgent:
                 if not owner or info_account.get("mint") != mint:
                     unresolved = True
                     continue
+                vault = _bytes(row["address"])
+                if owner in pool_data or any(vault and vault in p["raw"] for p in pool_data.values()):
+                    pool_amount += Decimal(row["amount"])
+                    r.holders.append(
+                        {
+                            "owner": owner,
+                            "account": row["address"],
+                            "sample_pct": float(Decimal(row["amount"]) / supply * 100),
+                            "classification": "verified_pool_vault",
+                            "counted": False,
+                        }
+                    )
+                    continue
                 owner_amounts[owner] += Decimal(row["amount"])
             owners = list(owner_amounts)
             owner_accounts = await self.rpc.multiple(owners) if owners else []
+            counted: dict[str, Decimal] = {}
             for owner, owner_account in zip(owners, owner_accounts, strict=True):
                 pct = float(owner_amounts[owner] / supply * 100)
-                # A system-owned address can still be a PDA. Do not claim an EOA without curve check.
-                kind = "unclassified"
-                if owner_account and (
-                    owner_account.get("executable") or owner_account.get("owner") != SYSTEM_PROGRAM
-                ):
-                    kind = "program_or_pool_candidate"
-                unresolved = True  # pool registry + owner-wide enumeration not available in free RPC sample
-                r.holders.append({"owner": owner, "sample_pct": pct, "classification": kind})
-            r.largest_accounts_pct = float(sum(Decimal(x["amount"]) for x in largest[:10]) / supply * 100)
+                kind = _classify_owner(owner, owner_account, pool_programs)
+                if kind != "same_dex_program_account":
+                    counted[owner] = owner_amounts[owner]
+                r.holders.append(
+                    {
+                        "owner": owner,
+                        "sample_pct": pct,
+                        "classification": kind,
+                        "counted": kind != "same_dex_program_account",
+                    }
+                )
+            r.pool_pct = float(pool_amount / supply * 100) if pool_data else None
+            if not pool_data:
+                unresolved = True
+                r.unknown.append(
+                    "Top 10 holders: pool observado não pôde ser lido; cofres de liquidez não separados"
+                )
+            elif not unresolved:
+                self._resolve_upper_bound(r, largest, counted, supply)
+            else:
+                r.unknown.append("Top 10 holders: conta da amostra sem owner/mint verificável")
             r.concentration_resolved = not unresolved
-            r.unknown.append("Top 10 holders: amostra de contas não resolve pools/PDAs nem owners completos")
-            r.notes.append("largest_accounts_pct é top 10 contas SPL brutas; não é top 10 holders.")
         except Exception as exc:
             r.unknown.append(f"Análise on-chain incompleta: {type(exc).__name__}")
         return r
+
+    async def _pool_accounts(self, pools: list[str]) -> dict[str, dict]:
+        """Raw pool state for each observed pool; only successfully read pools are returned."""
+        pools = [p for p in dict.fromkeys(pools) if _bytes(p)][:5]
+        if not pools:
+            return {}
+        result = await self.rpc.call(
+            "getMultipleAccounts", [pools, {"encoding": "base64", "commitment": "confirmed"}], ttl=300
+        )
+        found = {}
+        for pool, value in zip(pools, result["value"], strict=True):
+            data = (value or {}).get("data")
+            if not value or not isinstance(data, list) or not data or not value.get("owner"):
+                continue
+            try:
+                found[pool] = {"program": value["owner"], "raw": base64.b64decode(data[0])}
+            except (ValueError, TypeError):
+                continue
+        return found
+
+    @staticmethod
+    def _resolve_upper_bound(r: SecurityResult, largest, counted: dict[str, Decimal], supply: Decimal):
+        """Upper bound of top-10 owner share from the RPC's 20 largest token accounts.
+
+        Every account outside the sample holds at most the smallest sampled amount, so a
+        single-account holder outside the sample can contribute at most that amount.
+        """
+        groups = sorted(counted.values(), reverse=True)[:10]
+        complete = len(largest) < 20
+        floor = Decimal(0) if complete else min(Decimal(x["amount"]) for x in largest)
+        bound = sum(groups, Decimal(0)) + floor * max(0, 10 - len(groups))
+        r.top10_pct = min(100.0, float(bound / supply * 100))
+        r.concentration_method = "complete_accounts" if complete else "top20_upper_bound"
+        excluded = sum(1 for h in r.holders if not h["counted"])
+        r.notes.append(
+            "Top 10 = limite superior: maiores owners da amostra"
+            + ("" if complete else " + contas fora da amostra limitadas ao menor saldo amostrado")
+            + f"; {excluded} conta(s) de liquidez verificada(s) excluída(s)."
+        )
+        r.unknown.append(
+            "Top 10 holders: owners com várias contas pequenas e carteiras relacionadas não identificados"
+        )
 
     async def analyze_complete(self, mint: str) -> SecurityResult:
         """Conservative owner-group upper bound, INCLUDING pools; never relabel pools as people.

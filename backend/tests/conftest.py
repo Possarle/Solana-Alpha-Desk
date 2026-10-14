@@ -1,3 +1,10 @@
+import os
+import tempfile
+
+# Importing app.main builds the module-level app, which reads persisted config. Point it at a
+# throwaway database so a fresh clone can run tests before any migration or local alpha.db.
+os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(prefix="alpha-test-"), "app.db")
+
 import pytest
 
 from app.agents.judge import judge
@@ -5,6 +12,8 @@ from app.db import Base, Database
 from app.execution.simulation import ShadowExecution
 from app.schemas import Market, SecurityResult, now
 from app.thresholds import Thresholds
+
+Base.metadata.create_all(Database(os.environ["DATABASE_URL"]).engine)
 
 MINT = "So11111111111111111111111111111111111111112"
 POOL = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"

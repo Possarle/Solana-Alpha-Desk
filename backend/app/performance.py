@@ -1,5 +1,6 @@
 from sqlalchemy import select
 
+from .cohort import CohortTracker
 from .db import Equity, Order, Position
 
 
@@ -36,8 +37,5 @@ def performance(db):
         ),
         "curve": points,
         "strategies": list(strategies.values()),
-        "filter_comparison": {
-            "available": False,
-            "reason": "Sem coorte contrafactual acompanhada; comparação com/sem filtros não estimada.",
-        },
+        "filter_comparison": CohortTracker(db).report(),
     }

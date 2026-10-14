@@ -12,6 +12,7 @@ from .agents.position_size import position_size
 from .agents.security import SecurityAgent
 from .agents.smart_money import SmartMoneyAgent
 from .agents.social import SocialAgent
+from .cohort import CohortTracker
 from .config import Settings
 from .db import Account, Database, Decision, Equity, Evaluation, Event, Observation, Pool, Position, Token
 from .execution.live import LiveExecution
@@ -40,6 +41,7 @@ class Engine:
             SocialAgent(db),
         )
         self.benches = Benches(db)
+        self.cohort = CohortTracker(db)
         self.execution = ShadowExecution(db)
         self.live = LiveExecution(self.rpc, self.jupiter, settings.live_enabled)
         self.supervised = SupervisedLive(self)
@@ -88,6 +90,21 @@ class Engine:
                     )
                 )
 
+    def record_pools(self, markets: list[Market]):
+        """Register every public pool of a mint without overwriting the token's chosen market."""
+        with self.db.session() as s:
+            for m in markets:
+                if s.get(Pool, "solana:" + m.pool) is None:
+                    s.add(Pool(key="solana:" + m.pool, token_key="solana:" + m.address, data=m.model_dump()))
+
+    def known_pools(self, m: Market) -> list[str]:
+        """Observed pool first, then other pools public feeds reported for the same mint."""
+        with self.db.session() as s:
+            others = s.scalars(
+                select(Pool.key).where(Pool.token_key == "solana:" + m.address).limit(10)
+            ).all()
+        return list(dict.fromkeys([m.pool] + [k.removeprefix("solana:") for k in others]))
+
     async def evaluate(self, m: Market):
         t = self.thresholds
         key = "solana:" + m.address
@@ -108,7 +125,7 @@ class Engine:
         if not preliminary:
             try:
                 async with asyncio.timeout(30):
-                    sec = await self.security.analyze(m.address)
+                    sec = await self.security.analyze(m.address, pools=self.known_pools(m))
             except TimeoutError:
                 sec = SecurityResult(unknown=["Prazo on-chain excedido; análise não aprovada"])
         if not preliminary:
@@ -136,6 +153,10 @@ class Engine:
             judgment.ai_inferences = await explain_with_ollama(
                 self.settings.ollama_url, self.settings.ollama_model, judgment
             )
+        try:
+            self.cohort.register(m, judgment)
+        except Exception as exc:  # research bookkeeping never blocks the decision path
+            logger.warning("cohort_register:" + type(exc).__name__)
         with self.db.session() as s:
             row = Evaluation(token_key=key, data=judgment.model_dump(), security=sec.model_dump())
             s.add(row)
@@ -174,6 +195,7 @@ class Engine:
             self.desk.emit("crawler", "running", "Consultando novos pools e tokens públicos")
             try:
                 markets, errors = await self.discovery.discover()
+                self.record_pools(self.discovery.seen)
                 for error in errors:
                     self.db.event("provider", error, "warning")
                 # Revisit older discoveries; latest-pool feeds alone would never let them mature.
@@ -190,6 +212,7 @@ class Engine:
                 if revisit:
                     try:
                         refreshed = await self.dex.tokens([row.data["address"] for row in revisit])
+                        self.record_pools(refreshed)
                         best = {}
                         for item in refreshed:
                             if item.address not in best or (item.liquidity or 0) > (
@@ -431,6 +454,9 @@ class Engine:
                     {"mint": mint},
                 )
 
+    async def cohort_tick(self):
+        return await self.cohort.tick(self.dex)
+
     async def telegram_tick(self):
         if not self.telegram:
             return
@@ -481,6 +507,7 @@ class Engine:
                 ("risk", self.risk_tick, self.settings.risk_interval),
                 ("wallets", self.wallet_tick, self.settings.wallet_interval),
                 ("telegram", self.telegram_tick, 30),
+                ("cohort", self.cohort_tick, 60),
                 ("live", self.supervised.poll, 15),
             ]:
                 self.tasks.append(asyncio.create_task(self._loop(name, fn, interval)))
