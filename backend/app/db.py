@@ -174,3 +174,18 @@ class Database:
     def rows(self, cls, limit: int = 100):
         with self.session() as s:
             return s.scalars(select(cls).order_by(cls.at.desc()).limit(limit)).all()
+
+
+class LiveBook(Base):
+    __tablename__ = "live_book"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class LiveOrder(Base):
+    __tablename__ = "live_orders"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    active_slot: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    status: Mapped[str] = mapped_column(String)
+    at: Mapped[float] = mapped_column(Float, default=now)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)

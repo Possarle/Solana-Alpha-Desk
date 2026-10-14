@@ -1,6 +1,6 @@
 # SOLANA ALPHA DESK
 
-Estação local de pesquisa de memecoins Solana: dados públicos reais, decisões explicáveis e operações **SHADOW**, sem carteira privada e sem IA paga. Primeira versão funcional; não é um robô pronto para movimentar dinheiro real.
+Estação local de pesquisa de memecoins Solana: dados públicos reais, decisões explicáveis e operações **SHADOW**, sem carteira privada e sem IA paga. Inclui terminal real supervisionado experimental, isolado e desativado por padrão; não foi auditado nem validado com fundos reais. Veja [configuração e limites do modo real](docs/LIVE.md).
 
 ## Obter o projeto
 
@@ -69,7 +69,7 @@ Incluída configuração `.devcontainer/devcontainer.json`. Execute `bash script
 
 ### Por que pode aparecer NO TRADE constantemente?
 
-A política inicial exige uma concentração de holders resolvida. O RPC gratuito fornece as 20 maiores **contas de tokens**, mas isso não resolve owners completos, PDAs e reservas de pools. Esta versão mantém `top10_pct=null` e `concentration_resolved=false`; **por isso a política estrita bloqueia entradas**. Isso é deliberado, e não evidência de que o token é inseguro ou seguro.
+A política inicial exige uma concentração de holders resolvida. O RPC gratuito fornece as 20 maiores **contas de tokens**, mas isso não resolve owners completos, PDAs e reservas de pools. No scanner shadow, esta versão mantém `top10_pct=null` e `concentration_resolved=false`; **por isso a política estrita bloqueia entradas**. Isso é deliberado, e não evidência de que o token é inseguro ou seguro.
 
 Para estudar a simulação com dados incompletos, você pode desmarcar **Exigir concentração resolvida** em Settings. Essa opção é limitada ao modo shadow; preserva a classificação de risco alto e reduz o orçamento pela metade. Não resolve as lacunas. Outros filtros, mint/freeze authority e score continuam obrigatórios. Mesmo com essa opção, pode não haver oportunidades.
 
@@ -97,13 +97,13 @@ Market cap ausente também bloqueia: FDV é mostrado separadamente e não o subs
 | Área | Limitação explícita |
 |---|---|
 | Segurança | Sem auditoria completa de programas de pools, LP lock/burn, identificação de desenvolvedor, grafo de carteiras ou detecção comprovada de wash trading. |
-| Concentração | Top 10 holders real e número total de holders não resolvidos; apenas amostra de contas SPL. Não existe aprovação estrita de concentração nesta versão. |
+| Concentração | Scanner usa amostra incompleta. Preparação live exige enumeração integral reconciliada ao supply e limite superior conservador incluindo pools; RPC pode negar essa consulta. Beneficiários/owners relacionados não identificados. |
 | Token-2022 | Nome das extensões observado quando o RPC retorna jsonParsed, mas transferências não são simuladas por extensão; entradas bloqueadas. |
 | Carteiras | Últimas 10 assinaturas por ciclo; lacunas, histórico incompleto, transferências e posições anteriores afetam o relatório. Operações em SOL nativo sem contraparte USDC ficam não classificadas. Sem ranking de “carteiras lucrativas”. |
 | Social | Formulário de evidências; idade de conta, engajamento, reciclagem e atividade de GitHub não são coletados automaticamente. Score social permanece desconhecido. |
 | Simulação | Não modela ordem em livro, MEV, gas real, todos os custos de ATA/rent, transfer fees, impostos nem garantia de preenchimento. Paper e shadow compartilham um estimador; apenas shadow está exposto no dashboard. |
 | Performance | Comparação “com e sem filtros” indisponível até existir uma coorte contrafactual acompanhada. Sem backtest retrospectivo ou aprendizado que altere parâmetros automaticamente. |
-| LIVE | Adaptador de consulta/reconciliação/confirmação apenas. **Não há assinatura ou broadcast**, nem endpoint para ligar live. `LIVE_ENABLED=true` não altera essa trava. |
+| LIVE | Terminal supervisionado com montagem restrita, assinatura local, tentativa única de envio e reconciliação. Desativado por padrão; exige configuração explícita e confirmação por ordem. Sem swaps reais validados ou auditoria independente. Stops apenas alertam. Veja [LIVE.md](docs/LIVE.md). |
 | Operação | Uma instância / um worker; não é um cluster de alta disponibilidade. Sem retenção automática de histórico; planeje backups e espaço em disco. |
 | Integrações | Telegram/Ollama preparados mas não testados com credenciais/modelo do usuário; PostgreSQL/Docker não executados neste ambiente. |
 
@@ -225,3 +225,10 @@ O visual usa estações de agentes com estados observados, não uma sala 3D.
 Social é manual e opcional; Ollama é opcional e não autoriza ordens. Não há scraping do X,
 conversas inventadas entre agentes ou execução live. O projeto não opera quando o
 Codespaces está parado.
+
+
+## v0.3 — Live Supervision
+
+Nova página com prontidão, carteira pública, limites, revisão individual, confirmação explícita, posição e histórico reais separados do shadow. O backend persiste assinatura antes do envio, mantém reservas após timeouts e exige finalização/reconciliação para liberar posição.
+
+Para atualizar: pare o servidor, execute `git pull --ff-only origin main` e `bash scripts/start.sh`. Nenhuma configuração é habilitada automaticamente. A migração `0002` adiciona duas tabelas e preserva o histórico existente. Siga [docs/LIVE.md](docs/LIVE.md) para a configuração e limitações; não envie chaves privadas pelo chat.

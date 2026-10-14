@@ -103,3 +103,16 @@ Não existe evidência de lucratividade da estratégia. O padrão estrito de con
 Os limites de concentração, dados sociais manuais, infraestrutura não testada e live
 bloqueado descritos acima continuam válidos. A mesa visual não adiciona cobertura de
 holders que as fontes atuais não fornecem.
+
+## Atualização v0.3 — 2026-10-14
+
+Esta seção descreve o estado atual e substitui as afirmações históricas de ausência absoluta de assinatura/broadcast nas versões anteriores. Live continua **desativado por padrão**, agora com caminho supervisionado separado. Nenhum swap real ou chave do usuário foi usado nesta validação.
+
+- **103 testes Pytest aprovados**: suíte anterior preservada; assinatura criptográfica com chave efêmera sem fundos, validação de instruções/mints/fees/destinatários, negação de setup arbitrário, permissões de keypair, confirmação duplicada, expiração, alterações de configuração durante revisão, mainnet genesis completo, timeout sem reenvio, reserva persistente após reinício, orçamento diário, compra/venda, erro finalizado, divergência de saldo, monitoramento com live desativado e API autenticada.
+- Migrações SQLite `base → head → base → head` e upgrade `0001 → 0002` com preservação de dado anterior verificados. Duas tabelas novas isolam livro e ordens reais.
+- Ruff aprovado; TypeScript e build Vite aprovados.
+- Playwright/Chromium com backend real local e banco temporário: página Live Supervision em 1440×1000 e 390×844, envio bloqueado por padrão, preparação desabilitada sem configuração, botão Reconciliar funcional e ausência de erro JavaScript. Sem dados de mercado inventados no teste visual.
+- RPC público consultado **somente em leitura**: `getGenesisHash` retornou o genesis completo esperado de mainnet. Não chamou `sendTransaction` contra rede real.
+- Consulta do OpenAPI oficial atual do Jupiter confirmou `/swap/v2/build`, `transactionVersion=0` e instruções separadas. O formato de instrução é decodificado com a ABI fixada indicada em `LIVE.md`.
+
+Limitações da verificação: fluxo financeiro testado com respostas simuladas, sem rota/build autenticada nem preenchimento real Jupiter; sem PostgreSQL/Docker/Windows executados; sem auditoria independente. Um aviso de depreciação da dependência Starlette/TestClient permanece nos testes existentes; não houve falha de teste. Cobertura de enumeração de contas depende do RPC, e rotas não suportadas falham fechadas. Testes não demonstram rentabilidade ou segurança integral de protocolos externos.

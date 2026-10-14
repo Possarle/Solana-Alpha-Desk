@@ -59,3 +59,24 @@ class Jupiter:
             "estimated_roundtrip_loss_pct": 100 * (1 - sell.out_amount / buy.in_amount),
             "warning": "Cotação não prova que uma transação será confirmada ou revendida.",
         }
+
+    async def build(self, owner: str, input_mint: str, output_mint: str, amount: int, slippage_bps: int):
+        data, _ = await self.http.request(
+            "/build",
+            params={
+                "taker": valid_address(owner),
+                "inputMint": valid_address(input_mint),
+                "outputMint": valid_address(output_mint),
+                "amount": str(amount),
+                "slippageBps": str(slippage_bps),
+                "maxAccounts": "20",
+                "wrapAndUnwrapSol": "false",
+                "transactionVersion": "0",
+                "platformFeeBps": "0",
+            },
+            ttl=0,
+            priority=0,
+        )
+        if data.get("errorCode"):
+            raise ProviderError("Jupiter build indisponível")
+        return data

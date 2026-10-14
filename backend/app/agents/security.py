@@ -82,3 +82,71 @@ class SecurityAgent:
         except Exception as exc:
             r.unknown.append(f"Análise on-chain incompleta: {type(exc).__name__}")
         return r
+
+    async def analyze_complete(self, mint: str) -> SecurityResult:
+        """Conservative owner-group upper bound, INCLUDING pools; never relabel pools as people.
+
+        Used on demand for supervised live only. Full raw amounts must reconcile
+        against immutable mint supply. Restricted/unavailable GPA never approves.
+        """
+        result = await self.analyze(mint)
+        if result.critical or not result.authority_checked:
+            return result
+        try:
+            account = await self.rpc.call(
+                "getAccountInfo",
+                [mint, {"encoding": "jsonParsed", "commitment": "finalized"}],
+                ttl=0,
+                priority=0,
+            )
+            info = account["value"]["data"]["parsed"]["info"]
+            if account["value"]["owner"] != TOKEN_PROGRAM or info["mintAuthority"] or info["freezeAuthority"]:
+                raise ValueError("Permissões divergentes")
+            rows = await self.rpc.call(
+                "getProgramAccounts",
+                [
+                    TOKEN_PROGRAM,
+                    {
+                        "encoding": "jsonParsed",
+                        "commitment": "finalized",
+                        "withContext": True,
+                        "minContextSlot": account["context"]["slot"],
+                        "filters": [{"dataSize": 165}, {"memcmp": {"offset": 0, "bytes": mint}}],
+                    },
+                ],
+                ttl=0,
+                priority=0,
+            )
+            groups = defaultdict(int)
+            seen = set()
+            if not 0 < len(rows["value"]) <= 50000:
+                raise ValueError("Cobertura excede capacidade")
+            for row in rows["value"]:
+                parsed = row["account"]["data"]["parsed"]
+                data = parsed["info"]
+                if (
+                    row["pubkey"] in seen
+                    or row["account"]["owner"] != TOKEN_PROGRAM
+                    or parsed["type"] != "account"
+                    or data["mint"] != mint
+                ):
+                    raise ValueError("Enumeração inconsistente")
+                seen.add(row["pubkey"])
+                amount = int(data["tokenAmount"]["amount"])
+                if amount < 0 or data["tokenAmount"]["decimals"] != info["decimals"]:
+                    raise ValueError("Quantidade inconsistente")
+                groups[data["owner"]] += amount
+            supply = int(info["supply"])
+            if supply <= 0 or sum(groups.values()) != supply:
+                raise ValueError("Amostra não reconcilia supply")
+            result.top10_pct = sum(sorted(groups.values(), reverse=True)[:10]) / supply * 100
+            result.concentration_resolved = True
+            result.unknown = [x for x in result.unknown if not x.startswith("Top 10 holders")]
+            result.notes.append(
+                "Limite superior conservador: top 10 grupos owner de todas as contas, INCLUINDO pools/PDAs; soma reconciliada ao supply. Não identifica beneficiários nem carteiras relacionadas."
+            )
+            result.checked_at = __import__("time").time()
+        except Exception as exc:
+            result.concentration_resolved = False
+            result.unknown.append("Enumeração integral não comprovada: " + type(exc).__name__)
+        return result

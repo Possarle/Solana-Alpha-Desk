@@ -2,8 +2,10 @@ import asyncio
 import hmac
 import os
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,6 +61,18 @@ class OpenInput(BaseModel):
     address: str
 
 
+class LivePrepareInput(BaseModel):
+    request_id: UUID
+    address: str = Field(min_length=32, max_length=44)
+    side: Literal["buy", "sell"]
+    usdc: Decimal = Field(default=Decimal("1"), gt=0, le=100, decimal_places=6)
+
+
+class LiveConfirmInput(BaseModel):
+    review_hash: str = Field(pattern="^[0-9a-f]{64}$")
+    phrase: str = Field(max_length=100)
+
+
 class QuoteInput(BaseModel):
     address: str
     usd: float = Field(10, gt=0, le=100)
@@ -89,7 +103,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
         if lock_file:
             lock_file.close()
 
-    app = FastAPI(title="Solana Alpha Desk", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Solana Alpha Desk", version="0.3.0", lifespan=lifespan)
     app.state.engine, app.state.db = engine, db
     origins = [x.strip() for x in cfg.allowed_origins.split(",")]
     app.add_middleware(
@@ -192,7 +206,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "mode": "shadow", "version": "0.2.0"}
+        return {"status": "ok", "mode": "shadow", "version": "0.3.0"}
 
     @app.get("/api/state")
     def state():
@@ -337,6 +351,56 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
             return await engine.live.prepare(valid_address(value.address), value.usd)
         except Exception as exc:
             raise HTTPException(503, "Rota indisponível: " + type(exc).__name__) from None
+
+    @app.get("/api/live/status")
+    def live_status():
+        return engine.supervised.status()
+
+    @app.post("/api/live/prepare")
+    async def live_prepare(value: LivePrepareInput):
+        try:
+            return await engine.supervised.prepare(
+                str(value.request_id), value.address, value.side, value.usdc
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.post("/api/live/{order_id}/confirm")
+    async def live_confirm(order_id: UUID, value: LiveConfirmInput):
+        try:
+            return await engine.supervised.confirm(str(order_id), value.review_hash, value.phrase)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.post("/api/live/{order_id}/cancel")
+    async def live_cancel(order_id: UUID):
+        try:
+            return await engine.supervised.cancel(str(order_id))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.post("/api/live/control")
+    def live_control(value: ControlInput):
+        if len(cfg.dashboard_token.get_secret_value()) < 32:
+            raise HTTPException(409, "Configure DASHBOARD_TOKEN com 32 caracteres ou mais")
+        try:
+            if value.action == "emergency_stop":
+                engine.supervised.halt()
+            elif value.action == "clear_emergency":
+                engine.supervised.resume()
+            else:
+                raise ValueError("Ação real inválida")
+            return engine.supervised.status()
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.post("/api/live/reconcile")
+    async def live_reconcile():
+        try:
+            await engine.supervised.poll()
+            return engine.supervised.status()
+        except Exception as exc:
+            raise HTTPException(503, "Reconciliação indisponível: " + type(exc).__name__) from None
 
     @app.get("/api/wallets")
     def wallets():

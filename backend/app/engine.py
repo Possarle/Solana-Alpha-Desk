@@ -16,6 +16,7 @@ from .config import Settings
 from .db import Account, Database, Decision, Equity, Evaluation, Event, Observation, Pool, Position, Token
 from .execution.live import LiveExecution
 from .execution.simulation import ShadowExecution
+from .execution.supervised import SupervisedLive
 from .providers.http import SafeHTTP
 from .providers.jupiter import Jupiter
 from .providers.market import DexScreener, GeckoTerminal
@@ -41,6 +42,7 @@ class Engine:
         self.benches = Benches(db)
         self.execution = ShadowExecution(db)
         self.live = LiveExecution(self.rpc, self.jupiter, settings.live_enabled)
+        self.supervised = SupervisedLive(self)
         self.scan_lock, self.risk_lock = asyncio.Lock(), asyncio.Lock()
         self.tasks, self.last_scan = [], db.config("runtime", {}).get("last_scan")
         self.status = "initializing"
@@ -442,7 +444,10 @@ class Engine:
                     method="POST",
                     body={
                         "chat_id": self.settings.telegram_chat_id,
-                        "text": "Alpha Desk [SHADOW] " + row.message,
+                        "text": "Alpha Desk ["
+                        + ("LIVE" if row.kind.startswith("live_") else "SHADOW")
+                        + "] "
+                        + row.message,
                     },
                 )
             self.db.set_config("telegram_cursor", {"id": row.id})
@@ -455,7 +460,9 @@ class Engine:
                 raise
             except Exception as exc:
                 self.desk.emit(
-                    {"wallets": "smart", "discovery": "crawler", "risk": "risk"}.get(name, "crawler"),
+                    {"wallets": "smart", "discovery": "crawler", "risk": "risk", "live": "risk"}.get(
+                        name, "crawler"
+                    ),
                     "error",
                     name + ": " + type(exc).__name__,
                 )
@@ -465,6 +472,7 @@ class Engine:
 
     async def start(self):
         self.execution.initialize()
+        self.supervised.initialize()
         self.execution.reconcile()
         self.status = "running"
         if self.settings.enable_scheduler:
@@ -473,6 +481,7 @@ class Engine:
                 ("risk", self.risk_tick, self.settings.risk_interval),
                 ("wallets", self.wallet_tick, self.settings.wallet_interval),
                 ("telegram", self.telegram_tick, 30),
+                ("live", self.supervised.poll, 15),
             ]:
                 self.tasks.append(asyncio.create_task(self._loop(name, fn, interval)))
 
