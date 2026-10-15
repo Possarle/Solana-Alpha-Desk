@@ -105,7 +105,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
         if lock_file:
             lock_file.close()
 
-    app = FastAPI(title="Solana Alpha Desk", version="0.7.0", lifespan=lifespan)
+    app = FastAPI(title="Solana Alpha Desk", version="0.7.1", lifespan=lifespan)
     app.state.engine, app.state.db = engine, db
     origins = [x.strip() for x in cfg.allowed_origins.split(",")]
     app.add_middleware(
@@ -210,7 +210,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "mode": "shadow", "version": "0.7.0"}
+        return {"status": "ok", "mode": "shadow", "version": "0.7.1"}
 
     @app.get("/api/state")
     def state():
@@ -228,6 +228,23 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
     def launch_thresholds(value: LaunchThresholds):
         db.set_config("launch_thresholds", value.model_dump())
         return value.model_dump()
+
+    class LaunchControl(BaseModel):
+        action: Literal["resume", "stop"]
+
+    @app.post("/api/launch/control")
+    async def launch_control(value: LaunchControl):
+        execution = engine.launch.execution
+        if value.action == "resume" and not execution.reconcile()["matches"]:
+            raise HTTPException(409, "Caixa do modo lançamento não reconcilia; reativação bloqueada")
+        with db.session() as s:
+            account = s.get(Account, execution.account_id)
+            account.halted = value.action == "stop"
+        db.event(
+            "launch_control", "Modo lançamento: " + ("reativado" if value.action == "resume" else "parado")
+        )
+        result = await engine.launch.risk_tick() if value.action == "stop" else None
+        return {"halted": value.action == "stop", "exit": result}
 
     @app.post("/api/launch/close")
     async def launch_close():

@@ -337,3 +337,41 @@ def test_api_exposes_launch_state_and_settings(db):
         assert client.get("/api/launch").json()["thresholds"]["confirm_seconds"] == 5
         assert client.put("/api/launch/thresholds", json=new | {"max_position_pct": 5}).status_code == 422
         assert any(s["name"] == "PumpPortal" for s in client.get("/api/state").json()["services"])
+
+
+# ---------- regressions found in review ----------
+
+
+def test_creator_buy_in_raw_units_is_normalized():
+    mint = str(Keypair().pubkey())
+    assert parse_launch(create_event(mint, dev_tokens=30_000_000 * 10**6), 1.0).dev_buy_pct == 3.0
+    assert parse_launch(create_event(mint, dev_tokens=30_000_000), 1.0).dev_buy_pct == 3.0
+    assert parse_launch(create_event(mint, dev_tokens=10**18), 1.0).dev_buy_pct is None
+
+
+async def test_unknown_creator_buy_costs_no_rpc(desk):
+    launch = launch_for(desk, with_inflow(FRESH, 3.4), dev_tokens=None)
+    desk.on_launch(launch)
+    await desk.tick()
+    assert desk.rpc.calls == 0 and not desk.queue
+    assert desk.recent[0]["reasons"] == ["Compra do criador desconhecida no feed"]
+
+
+async def test_stale_queue_is_counted_not_listed(desk):
+    for _ in range(5):
+        desk.queue.append((now() - 100, launch_for(desk, with_inflow(FRESH, 3.4))))
+    await desk.tick()
+    assert desk.stats["skipped"] == 5 and len(desk.recent) == 0 and desk.rpc.calls == 0
+
+
+def test_launch_halt_can_be_reviewed_and_resumed(db):
+    from fastapi.testclient import TestClient
+
+    app = create_app(Settings(enable_scheduler=False), db)
+    with TestClient(app) as client:
+        assert client.post("/api/launch/control", json={"action": "stop"}).json()["halted"] is True
+        assert client.get("/api/launch").json()["account"]["halted"] is True
+        assert client.post("/api/launch/control", json={"action": "resume"}).json()["halted"] is False
+        assert client.get("/api/launch").json()["account"]["halted"] is False
+        assert client.get("/api/state").json()["account"]["halted"] is False  # main book untouched
+        assert client.post("/api/launch/control", json={"action": "bogus"}).status_code == 422

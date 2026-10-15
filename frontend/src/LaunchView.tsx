@@ -23,10 +23,12 @@ export function LaunchView({perf}:{perf:Performance|null}){
  const st=s.stats, checked=(st.rejected||0)+(st.approved||0)+(st.bought||0)+(st.error||0);
  const mainWin=perf?.win_rate, launchWin=s.closed.trades?s.closed.wins/s.closed.trades*100:null;
  const save=async()=>{if(!form)return;setBusy(true);try{await api('/launch/thresholds','PUT',form);setMsg('Configuração salva. Vale para as próximas moedas.');load()}catch(e){setMsg((e as Error).message)}finally{setBusy(false)}};
+ const control=async(action:'resume'|'stop')=>{setBusy(true);try{await api('/launch/control','POST',{action});setMsg(action==='resume'?'Modo lançamento reativado.':'Modo lançamento parado; posição aberta foi encerrada na simulação.');load()}catch(e){setMsg((e as Error).message)}finally{setBusy(false)}};
  const close=async()=>{setBusy(true);try{await api('/launch/close','POST');load()}finally{setBusy(false)}};
  const feedTone=s.feed.state==='active'?'green':s.feed.state==='idle'?'muted':'orange';
  return <div className="launch">
   <div className="notice warning"><ShieldAlert size={20}/>Fase de maior risco: no primeiro minuto não existe volume, vendas nem histórico. O robô verifica só o que é possível (permissões, compra do criador, compras de terceiros, quanto já subiu) e opera apenas com dinheiro fictício.</div>
+  {s.account?.halted&&<div className="error-banner"><ShieldAlert size={18}/><span>Modo lançamento parado (perda diária atingida ou parada manual). Novas compras estão bloqueadas. Se o limite diário ainda estiver estourado, ele só libera no novo dia UTC (21h em Brasília).</span><button className="button secondary" disabled={busy} onClick={()=>void control('resume')}>Revisar e reativar</button></div>}
   <div className="metrics">
    <div className="metric"><div className="metric-top"><span>Feed PumpPortal</span><span className={'badge '+feedTone}>{s.feed.state==='active'?'AO VIVO':s.feed.state==='idle'?'AGUARDANDO':'RECONECTANDO'}</span></div><strong>{num(st.received||0,0)}</strong><small>moedas novas recebidas · {s.feed.detail}</small></div>
    <div className="metric"><div className="metric-top"><span>Verificadas na blockchain</span><Radio size={16}/></div><strong>{num(checked,0)}</strong><small>{num(st.skipped||0,0)} puladas por limite de consultas · {st.queued||0} na fila</small></div>
@@ -62,7 +64,7 @@ export function LaunchView({perf}:{perf:Performance|null}){
 
   {form&&<section className="panel"><div className="panel-head"><div><small className="eyebrow">HIPÓTESES DE TESTE · NÃO CALIBRADAS</small><h2>Regras do modo lançamento</h2></div></div>
    <form onSubmit={e=>{e.preventDefault();void save()}}><div className="settings-grid">{Object.entries(form).map(([k,v])=><label key={k} className={typeof v==='boolean'?'toggle-label':''}><span>{LABELS[k]||k}</span>{typeof v==='boolean'?<input type="checkbox" checked={v} onChange={e=>setForm({...form,[k]:e.target.checked})}/>:<input type="number" step="any" required value={v} onChange={e=>setForm({...form,[k]:Number(e.target.value)})}/>}</label>)}</div>
-   <div className="action-row"><button className="button primary" disabled={busy}><Check size={15}/> Salvar regras</button><button type="button" className="button secondary" onClick={()=>setForm(s.thresholds)}>Descartar</button>{msg&&<small className="launch-msg">{msg}</small>}</div></form>
+   <div className="action-row"><button className="button primary" disabled={busy}><Check size={15}/> Salvar regras</button><button type="button" className="button secondary" onClick={()=>setForm(s.thresholds)}>Descartar</button>{!s.account?.halted&&<button type="button" className="button danger" disabled={busy} onClick={()=>void control('stop')}><Square size={14}/> Parar modo lançamento</button>}{msg&&<small className="launch-msg">{msg}</small>}</div></form>
    <p className="fine-print launch-pad">{s.method} O RPC público é compartilhado com o modo atual; para verificar mais moedas por minuto, use um RPC_URL próprio (por exemplo, o plano gratuito da Helius) no .env.</p>
   </section>}
  </div>

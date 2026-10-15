@@ -133,12 +133,17 @@ def parse_launch(message: dict, seen_at: float) -> Launch | None:
         creator = valid_address(str(creator)) if creator else None
     except ValueError:
         creator = None
+    dev_tokens = _num(message.get("initialBuy"))
+    supply_ui = EXPECTED_SUPPLY_RAW / 10**TOKEN_DECIMALS
+    if dev_tokens is not None and dev_tokens > supply_ui:
+        # Some feeds report raw base units (6 decimals); anything still above supply is unusable.
+        dev_tokens = dev_tokens / 10**TOKEN_DECIMALS if dev_tokens <= EXPECTED_SUPPLY_RAW else None
     return Launch(
         mint=mint,
         symbol=str(message.get("symbol") or "?")[:20],
         name=str(message.get("name") or "")[:60],
         creator=creator,
-        dev_buy_tokens=_num(message.get("initialBuy")),
+        dev_buy_tokens=dev_tokens,
         dev_buy_sol=_num(message.get("solAmount")),
         signature=str(message.get("signature") or "")[:120] or None,
         seen_at=seen_at,

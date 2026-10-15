@@ -101,7 +101,11 @@ class LaunchDesk:
         if not t.enabled:
             return
         dev = launch.dev_buy_pct
-        if dev is not None and dev > t.max_dev_buy_pct:
+        if dev is None or launch.dev_buy_sol is None:
+            # Without the creator's buy, neither creator share nor third-party inflow is measurable.
+            self._record(launch, "rejected", ["Compra do criador desconhecida no feed"])
+            return
+        if dev > t.max_dev_buy_pct:
             self._record(launch, "rejected", [f"Criador comprou {dev:.1f}% do supply"], dev_buy_pct=dev)
             return
         self.queue.append((launch.seen_at + t.confirm_seconds, launch))
@@ -134,7 +138,7 @@ class LaunchDesk:
             due, launch = self.queue[0]
             if now() - due > STALE_AFTER:
                 self.queue.popleft()
-                self._record(launch, "skipped", ["Verificação atrasada: limite de consultas"])
+                self.stats["skipped"] += 1  # counted, not listed: keeps real decisions visible
                 continue
             if not self._budget_ok(t):
                 return  # wait for budget; may become stale and be skipped honestly

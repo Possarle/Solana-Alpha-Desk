@@ -334,3 +334,15 @@ Novo modo que avalia moedas do **pump.fun segundos depois de criadas**. Ele roda
 - Para desligar: `LAUNCH_MODE=false` no `.env`, ou desmarque "Modo lançamento ligado" na página.
 
 Fontes: [PumpPortal real-time API](https://pumpportal.fun/data-api/real-time) · [pump.fun public docs](https://github.com/pump-fun/pump-public-docs/blob/main/docs/PUMP_PROGRAM_README.md)
+
+
+## v0.7.1 — Revisão das regras do modo lançamento
+
+Quatro problemas encontrados na revisão, todos reproduzidos antes de corrigir:
+
+1. **Unidade da compra do criador.** Se o feed informasse a compra do criador em unidades brutas (6 casas decimais), o robô calcularia milhões de por cento e rejeitaria toda moeda. Agora a unidade é normalizada; valores impossíveis viram "desconhecido".
+2. **Consulta desperdiçada.** Moedas sem a compra do criador no feed agora são rejeitadas sem gastar consulta à blockchain.
+3. **Trava permanente.** Ao atingir a perda diária, o modo lançamento ficava parado sem como reativar. Agora há "Revisar e reativar" e "Parar modo lançamento" na página (`POST /api/launch/control`). A reativação exige caixa reconciliado.
+4. **Lista poluída.** Moedas puladas por limite de consultas são só contadas, sem esconder as decisões reais.
+
+Também foi adicionada uma auditoria com preços aleatórios (`tests/test_rule_invariants.py`): centenas de operações nos dois modos, conferindo em cada saída que o stop só vende abaixo do nível, o alvo só acima, o trailing só depois de armado, o tamanho respeita o limite e os caixas reconciliam.
