@@ -62,7 +62,11 @@ def test_missing_price_keeps_position_reserved(db, market, judgment, limits):
         assert s.get(Position, opened["position_id"]).active_slot == 1
     market.observed_at, market.price = now(), 0.99
     assert e.open(market, judgment, limits, "another")["status"] == "rejected"
-    assert e.mark_and_manage(market, limits)["reason"] == "STALE_PRICE"
+    # Fresh data again: no forced sale; normal rules decide and the position keeps its slot.
+    assert e.mark_and_manage(market, limits) is None
+    with db.session() as s:
+        p = s.get(Position, opened["position_id"])
+        assert p.status == "open" and p.active_slot == 1 and "pending_reason" not in p.data
     assert e.reconcile()["matches"]
 
 
@@ -165,3 +169,46 @@ def test_illiquid_entry_blocked_even_with_previous_approval(db, market, judgment
     market.liquidity = 100
     result = ShadowExecution(db).open(market, judgment, limits, "illiquid")
     assert result["status"] == "rejected" and result["reason"] == "Liquidez insuficiente"
+
+
+def test_stop_loss_governs_until_trailing_is_armed(db, market, judgment, limits):
+    e = ShadowExecution(db)
+    e.open(market, judgment, limits, "x")
+    market.price = 0.895  # -10.5%: between trailing (10%) and stop (12%); trailing not armed yet
+    assert e.mark_and_manage(market, limits) is None
+    market.price = 0.87
+    assert e.mark_and_manage(market, limits)["reason"] == "STOP_LOSS"
+
+
+def test_trailing_arms_only_after_activation_gain(db, market, judgment, limits):
+    e = ShadowExecution(db)
+    e.open(market, judgment, limits, "x")
+    market.price = 1.05  # +5%: below activation; a 10% pullback from here is not a trailing exit
+    assert e.mark_and_manage(market, limits) is None
+    market.price = 0.945
+    assert e.mark_and_manage(market, limits) is None
+    market.price = 1.2  # armed
+    assert e.mark_and_manage(market, limits) is None
+    market.price = 1.07
+    assert e.mark_and_manage(market, limits)["reason"] == "TRAILING_STOP"
+
+
+def test_real_trigger_stays_pending_until_executable(db, market, judgment, limits):
+    e = ShadowExecution(db)
+    e.open(market, judgment, limits, "x")
+    market.price, market.liquidity = 0.85, 0  # stop hit but nothing executable
+    assert e.mark_and_manage(market, limits) == {"status": "exit_pending", "reason": "STOP_LOSS"}
+    market.price, market.liquidity = 0.95, 1_000_000  # price recovered: a real stop is NOT cancelled
+    result = e.mark_and_manage(market, limits)
+    assert result["status"] == "simulated" and result["reason"] == "STOP_LOSS"
+
+
+def test_entry_and_exit_record_timing_evidence(db, market, judgment, limits):
+    e = ShadowExecution(db)
+    e.open(market, judgment, limits, "x")
+    market.price = 1.5
+    e.mark_and_manage(market, limits)
+    with db.session() as s:
+        p = s.scalar(select(Position))
+        assert p.data["decision_price"] == 1 and p.data["entry_data_age_s"] >= 60
+        assert p.data["exit_mark"] == 1.5 and "exit_data_age_s" in p.data

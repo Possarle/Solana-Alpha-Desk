@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import select, text
 
 from ..agents.position_size import position_size
-from ..agents.risk import exit_reason
+from ..agents.risk import DATA_REASONS, exit_reason
 from ..db import Account, Equity, Event, Order, Position
 from ..schemas import Judgment, Market, now
 from ..thresholds import Thresholds
@@ -108,6 +108,8 @@ class SimulationExecution:
                     "slippage_bps": float(slip * 10000),
                     "entry_slippage_cost": float(qty * (fill - D(m.price))),
                     "last_mark_at": m.observed_at,
+                    "decision_price": m.price,
+                    "entry_data_age_s": round(m.age_seconds(), 1),
                     "judgment": j.model_dump(),
                     "size": size,
                 },
@@ -153,9 +155,15 @@ class SimulationExecution:
             breach = self.daily_breach(account, equity, t)
             if breach:
                 account.halted = True
-            reason = (
-                forced_reason or p.data.get("pending_reason") or exit_reason(p, m, t, account.halted, breach)
-            )
+            pending = p.data.get("pending_reason")
+            if pending in DATA_REASONS and fresh and m.liquidity:
+                # The data problem is gone: re-judge with the normal rules instead of forcing a sale.
+                p.status = "open"
+                p.data = {k: v for k, v in p.data.items() if k != "pending_reason"} | {
+                    "cleared_pending": (p.data.get("cleared_pending") or 0) + 1
+                }
+                pending = None
+            reason = forced_reason or pending or exit_reason(p, m, t, account.halted, breach)
             if not reason:
                 s.add(Equity(value=equity, data={"mode": p.mode, "mark_fresh": fresh}))
                 return None
@@ -192,6 +200,8 @@ class SimulationExecution:
             p.pnl, p.status, p.active_slot, p.closed_at = proceeds - p.cost, "closed", None, now()
             p.data = p.data | {
                 "exit_reason": reason,
+                "exit_mark": float(p.mark),
+                "exit_data_age_s": round(m.age_seconds(), 1),
                 "exit_fee": float(fee),
                 "exit_price": float(fill),
                 "exit_slippage_cost": float(p.qty * (p.mark - fill)),

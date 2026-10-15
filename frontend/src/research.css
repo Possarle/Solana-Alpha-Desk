@@ -26,3 +26,11 @@
 @media(max-width:1300px){.cohort-grid{grid-template-columns:1fr}.cohort-chart{padding:0 20px}}
 @media(max-width:900px){.cohort-grid{grid-template-columns:1fr}.cohort-chart{padding:0 16px}}
 @media(max-width:650px){.concentration-hero{grid-template-columns:1fr}.holder-line{grid-template-columns:80px 1fr 48px}.holder-line small{display:none}.cohort-intro{padding-inline:16px}}
+.timing-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:0 20px 18px}
+.timing-grid>div{background:#14131d;border:1px solid #2a2535;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.timing-grid small{font-size:9px}
+.timing-grid b{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.timing-grid span{font-size:9px;color:#7f7997;line-height:1.5}
+.timing-method{padding:14px 20px 18px}
+@media(max-width:900px){.timing-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.timing-grid{grid-template-columns:1fr;padding-inline:16px}}

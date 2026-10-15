@@ -269,3 +269,20 @@ Nova página inicial **Trading Floor**: a mesa inteira em uma tela, no estilo de
 Nada se mexe sem atividade real: sem dados, a tela mostra "aguardando". Os mascotes e a identidade visual são originais. Não há gráfico de candles reconstruído; o telão usa os preços que o robô coletou. No celular, deslize a sala para os lados. O Agent Desk antigo continua disponível no menu.
 
 Para atualizar no Codespaces: pare o servidor (Ctrl+C), rode `git pull --ff-only origin main` e `bash scripts/start.sh`. Não há migração de banco nesta versão.
+
+
+## v0.6 — Regras de compra/venda validadas e auditoria de tempo
+
+**Correções nas regras de saída** (provadas com o motor real antes de corrigir):
+
+1. **O stop-loss configurado nunca disparava.** O trailing stop (10%) contava desde a entrada, então qualquer queda de 10% vendia antes do stop de 12%. Agora o trailing só é armado depois que a posição sobe `trailing_activation_pct` (padrão 10%); antes disso, quem manda é o stop-loss. Assim cada regra faz o que o nome diz.
+2. **Um preço atrasado forçava uma venda.** Uma cotação antiga ou um erro de rede marcava a posição para sair, e ela era vendida assim que o preço voltava, mesmo saudável. Agora, problemas só de dado (preço antigo, liquidez desconhecida, falha de consulta) são reavaliados quando o dado volta. Um gatilho real (stop, alvo, perda diária, emergência) continua pendente até a venda acontecer.
+
+**Auditoria de tempo** (Performance → "O atraso está custando dinheiro?", ou `.venv/bin/python scripts/timing_audit.py` no terminal):
+
+- **Atraso na compra:** quanto o preço já tinha mudado logo depois da compra simulada.
+- **Passou do stop:** quanto abaixo do nível do stop a venda aconteceu, por causa do intervalo entre consultas.
+- **Gatilho → venda:** segundos entre o preço cruzar o gatilho e a venda.
+- **Resultado por motivo de saída:** onde o dinheiro simulado está sendo ganho ou perdido.
+
+O relatório funciona também com o histórico antigo, porque usa os preços que o robô já coletou. Novas operações passam a registrar o preço da decisão e a idade do dado na entrada e na saída. Não há migração de banco nesta versão.

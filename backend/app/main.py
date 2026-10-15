@@ -34,6 +34,7 @@ from .logging_setup import configure_logging
 from .performance import performance
 from .schemas import EvidenceInput, Market, WalletInput, now, valid_address
 from .thresholds import Thresholds
+from .timing import timing_report
 
 
 def position_json(p):
@@ -103,7 +104,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
         if lock_file:
             lock_file.close()
 
-    app = FastAPI(title="Solana Alpha Desk", version="0.5.0", lifespan=lifespan)
+    app = FastAPI(title="Solana Alpha Desk", version="0.6.0", lifespan=lifespan)
     app.state.engine, app.state.db = engine, db
     origins = [x.strip() for x in cfg.allowed_origins.split(",")]
     app.add_middleware(
@@ -206,7 +207,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "mode": "shadow", "version": "0.5.0"}
+        return {"status": "ok", "mode": "shadow", "version": "0.6.0"}
 
     @app.get("/api/state")
     def state():
@@ -216,6 +217,10 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
     def stats():
         return performance(db)
 
+    @app.get("/api/timing")
+    def timing():
+        return timing_report(db)
+
     @app.get("/api/report")
     def report():
         return {
@@ -224,6 +229,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
             "currency": "USD",
             "disclaimer": "Resultados simulados, não realizados em blockchain.",
             "performance": performance(db),
+            "timing": timing_report(db),
             "thresholds": engine.thresholds.model_dump(),
             "decisions": [{"at": row.at, **row.data} for row in db.rows(Decision, 300)],
         }

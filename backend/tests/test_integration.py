@@ -99,8 +99,14 @@ async def test_risk_rpc_failure_reserves_then_retries(db, market, judgment):
     with db.session() as s:
         assert s.scalar(select(Position)).active_slot == 1
     e.gecko.refresh = AsyncMock(return_value=market)
+    # Price is back and healthy: the network glitch alone no longer forces a sale.
+    assert await e.risk_tick() is None
+    with db.session() as s:
+        p = s.scalar(select(Position))
+        assert p.status == "open" and p.active_slot == 1
+    market.price = 0.5  # a real stop still exits normally
     result = await e.risk_tick()
-    assert result["status"] == "simulated"
+    assert result["status"] == "simulated" and result["reason"] == "STOP_LOSS"
     assert e.execution.reconcile()["matches"]
     await e.stop()
 

@@ -19,6 +19,8 @@ class Thresholds(BaseModel):
     stop_loss_pct: float = Field(12, gt=0, le=90)
     take_profit_pct: float = Field(25, gt=0, le=1000)
     trailing_stop_pct: float = Field(10, gt=0, le=90)
+    # Trailing only arms after this gain over the entry fill; before that the stop-loss governs.
+    trailing_activation_pct: float = Field(10, ge=0, le=1000)
     max_hold_minutes: int = Field(180, ge=1, le=10080)
     liquidity_drop_pct: float = Field(30, gt=0, le=100)
     max_slippage_bps: int = Field(200, ge=10, le=500)

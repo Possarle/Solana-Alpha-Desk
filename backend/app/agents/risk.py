@@ -1,6 +1,9 @@
 from ..schemas import Market, now
 from ..thresholds import Thresholds
 
+# Reasons caused only by missing/old data: they clear once fresh, executable data returns.
+DATA_REASONS = frozenset({"STALE_PRICE", "UNKNOWN_LIQUIDITY", "PERSISTENT_PRICE_FAILURE"})
+
 
 def exit_reason(p, m: Market, t: Thresholds, halted: bool, daily_breach: bool) -> str | None:
     if daily_breach:
@@ -14,7 +17,8 @@ def exit_reason(p, m: Market, t: Thresholds, halted: bool, daily_breach: bool) -
         return "STOP_LOSS"
     if change >= t.take_profit_pct:
         return "TAKE_PROFIT"
-    if m.price <= float(p.peak) * (1 - t.trailing_stop_pct / 100):
+    armed = float(p.peak) >= float(p.entry) * (1 + t.trailing_activation_pct / 100)
+    if armed and m.price <= float(p.peak) * (1 - t.trailing_stop_pct / 100):
         return "TRAILING_STOP"
     if now() - p.opened_at >= t.max_hold_minutes * 60:
         return "MAX_HOLD_TIME"
