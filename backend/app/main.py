@@ -105,7 +105,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
         if lock_file:
             lock_file.close()
 
-    app = FastAPI(title="Solana Alpha Desk", version="0.7.1", lifespan=lifespan)
+    app = FastAPI(title="Solana Alpha Desk", version="0.7.2", lifespan=lifespan)
     app.state.engine, app.state.db = engine, db
     origins = [x.strip() for x in cfg.allowed_origins.split(",")]
     app.add_middleware(
@@ -210,7 +210,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "mode": "shadow", "version": "0.7.1"}
+        return {"status": "ok", "mode": "shadow", "version": "0.7.2"}
 
     @app.get("/api/state")
     def state():

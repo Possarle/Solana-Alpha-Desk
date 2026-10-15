@@ -70,7 +70,7 @@ def judge(m: Market, s: SecurityResult, t: Thresholds, social: dict, smart: dict
         },
         rules=[
             "market×0.35 + safety×0.35 + momentum×0.20 + concentration×0.10",
-            "FDV não substitui market cap",
+            "Sem market cap da fonte, usa FDV (exibido pelo GeckoTerminal); exige mint authority revogada",
             "Vendas recentes não garantem saída",
             "Score heurístico; não representa probabilidade de lucro",
         ],

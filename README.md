@@ -78,7 +78,7 @@ NO TRADE é um resultado válido: significa que nenhum token passou por **todas*
 
 Se o pool não puder ser lido, a concentração continua **desconhecida** e a política estrita bloqueia — como antes. Ainda podem aparecer muitos NO TRADE porque memecoins frequentemente falham em liquidez, market cap confirmado, idade, fluxo de vendas, permissões ou concentração. Isso é o filtro funcionando.
 
-A opção **Exigir concentração resolvida** em Settings continua existindo para pesquisa shadow. Market cap ausente também bloqueia: FDV é mostrado separadamente e não o substitui. A idade é do pool observado, não necessariamente do mint. A descoberta cobre uma amostra dos lançamentos; não é um firehose de toda a Solana.
+A opção **Exigir concentração resolvida** em Settings continua existindo para pesquisa shadow. Quando a fonte não informa market cap (o GeckoTerminal devolve vazio para tokens não verificados), o robô usa o FDV, marcado como "Market cap (FDV)"; a mint authority revogada continua obrigatória. A idade é do pool observado, não necessariamente do mint. A descoberta cobre uma amostra dos lançamentos; não é um firehose de toda a Solana.
 
 ## Funcionalidades implementadas
 
@@ -346,3 +346,12 @@ Quatro problemas encontrados na revisão, todos reproduzidos antes de corrigir:
 4. **Lista poluída.** Moedas puladas por limite de consultas são só contadas, sem esconder as decisões reais.
 
 Também foi adicionada uma auditoria com preços aleatórios (`tests/test_rule_invariants.py`): centenas de operações nos dois modos, conferindo em cada saída que o stop só vende abaixo do nível, o alvo só acima, o trailing só depois de armado, o tamanho respeita o limite e os caixas reconciliam.
+
+
+## v0.7.2 — Por que o SCAN rejeitava quase tudo
+
+O GeckoTerminal devolve o **market cap vazio para tokens não verificados**, que são praticamente todas as memecoins novas, e mostra o FDV no lugar. Como o robô exigia "market cap confirmado", **toda moeda vinda do GeckoTerminal era rejeitada no primeiro filtro**, e os agentes seguintes nunca recebiam nada.
+
+Agora, só quando a fonte não traz o market cap, o robô usa o FDV (rótulo "Market cap (FDV)" no checklist e no scanner). Isso é seguro aqui porque o VET continua exigindo mint authority revogada: com o supply fixo, o FDV é o limite máximo do market cap. Se a fonte trouxer market cap, ele sempre prevalece.
+
+A mensagem "Liquidez: desconhecido" também ficou mais clara. Ela costuma aparecer em moedas que ainda estão na curva do pump.fun, que são avaliadas pelo Launch Sniper.

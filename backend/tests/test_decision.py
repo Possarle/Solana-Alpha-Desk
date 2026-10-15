@@ -1,7 +1,7 @@
 import pytest
 
 from app.agents.bench import Benches
-from app.agents.filter import arithmetic_filter, trades_filter
+from app.agents.filter import arithmetic_filter, market_checks, trades_filter
 from app.agents.judge import judge
 from app.agents.pick import pick
 from app.agents.position_size import position_size
@@ -9,9 +9,22 @@ from app.schemas import SecurityResult, now, valid_address
 from app.thresholds import Thresholds
 
 
-def test_fdv_is_not_market_cap(market, limits):
+def test_fdv_used_only_when_market_cap_missing(market, limits):
     market.market_cap, market.fdv = None, 200000
-    assert "Market cap confirmado: desconhecido" in arithmetic_filter(market, limits)
+    assert arithmetic_filter(market, limits) == []
+    checks = {c["label"]: c for c in market_checks(market, limits)}
+    assert checks["Market cap (FDV)"]["observed"] == 200000
+    market.market_cap, market.fdv = 30000, 200000  # a real market cap always wins over FDV
+    assert "Market cap abaixo do mínimo" in arithmetic_filter(market, limits)
+    market.market_cap, market.fdv = None, None
+    assert "Market cap e FDV desconhecidos" in arithmetic_filter(market, limits)
+
+
+def test_fdv_fallback_cannot_pass_with_active_mint_authority(market, limits, security):
+    market.market_cap, market.fdv = None, 200000
+    security.mint_authority = "x"
+    security.critical = ["Mint authority ativa"]
+    assert not judge(market, security, limits, {}, {}).approved
 
 
 def test_unknown_authority_cannot_pass(market, limits):

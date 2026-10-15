@@ -6,6 +6,10 @@ def market_checks(m: Market, t: Thresholds) -> list[dict]:
     """One source of truth for filtering and the visible evidence checklist."""
     age = (now() - m.created_at) / 60 if m.created_at is not None else None
     tx = m.buys_24h + m.sells_24h if m.buys_24h is not None and m.sells_24h is not None else None
+    # GeckoTerminal returns null market cap for unverified tokens (almost every new memecoin) and
+    # displays FDV instead. FDV is used only then; VET still requires a revoked mint authority,
+    # so supply cannot grow and FDV is the upper bound of market cap.
+    cap, cap_label = (m.market_cap, "Market cap") if m.market_cap is not None else (m.fdv, "Market cap (FDV)")
     specs = [
         (
             "Liquidez",
@@ -13,7 +17,7 @@ def market_checks(m: Market, t: Thresholds) -> list[dict]:
             t.min_liquidity,
             None,
             "Liquidez abaixo do mínimo",
-            "Liquidez: desconhecido",
+            "Liquidez não informada pela fonte (comum em moedas ainda na curva do pump.fun)",
         ),
         (
             "Volume 24h",
@@ -24,14 +28,14 @@ def market_checks(m: Market, t: Thresholds) -> list[dict]:
             "Volume 24h: desconhecido",
         ),
         (
-            "Market cap confirmado",
-            m.market_cap,
+            cap_label,
+            cap,
             t.min_market_cap,
             t.max_market_cap,
             "Market cap acima do máximo"
-            if m.market_cap is not None and m.market_cap > t.max_market_cap
-            else "Market cap confirmado abaixo do mínimo",
-            "Market cap confirmado: desconhecido",
+            if cap is not None and cap > t.max_market_cap
+            else "Market cap abaixo do mínimo",
+            "Market cap e FDV desconhecidos",
         ),
         (
             "Idade do pool (min)",
