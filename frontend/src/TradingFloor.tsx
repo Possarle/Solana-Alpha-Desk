@@ -236,6 +236,35 @@ export function TradingFloor({state,perf,onSelect}:{state:State;perf:Performance
     <div className="fl-funnel"><span className="fl-code">filter.py · A ORDEM É O QUE IMPORTA</span><div>{['market_kill','flow_kill','chain_kill','score_kill'].map((n,i)=><span key={n} className={'chip '+(firstKill===i?'kill':firstKill===-1||i<firstKill?(gstate[i]==='pass'?'pass':''):'off')}>{n}</span>)}<span className={'chip '+(j?.approved?'pass':'off')}>pick</span></div></div>
    </div>
   </section>
+  <WhyNoTrade/>
   <p className="fl-foot">SHADOW · dinheiro fictício · animações só acontecem quando um agente reporta atividade real · preços do gráfico são os coletados pelo robô, não candles reconstruídos</p>
  </div>
+}
+
+type Funnel={hours:number;cycles:number;running_hours:number;running_minutes:number;offline_periods:number;longest_offline_hours:number;offline_now_minutes:number|null;tokens_evaluated:number;tokens_approved:number;entries:number;blockers:{reason:string;tokens:number}[];only_blocker:{reason:string;tokens:number}[];entry_blocks:{reason:string;times:number}[];method:string};
+
+function WhyNoTrade(){
+ const [f,setF]=useState<Funnel|null>(null);
+ useEffect(()=>{let live=true;const load=()=>api<Funnel>('/funnel?hours=48').then(x=>{if(live)setF(x)}).catch(()=>{});load();const id=setInterval(load,60000);return()=>{live=false;clearInterval(id)}},[]);
+ if(!f)return null;
+ const max=Math.max(1,...f.blockers.map(b=>b.tokens));
+ const up=Math.min(100,f.running_hours/f.hours*100);
+ return <section className="fl-panel fl-why">
+  <div className="fl-panel-head"><span>POR QUE NÃO COMPROU? · ÚLTIMAS {f.hours} H</span><span className="fl-pink">{f.entries} COMPRAS SIMULADAS</span></div>
+  <div className="fl-why-body">
+   <div className="fl-why-col">
+    <small>ROBÔ LIGADO</small>
+    <strong>{f.running_minutes<60?f.running_minutes+' min':f.running_hours+' h'} <em>de {f.hours} h</em></strong>
+    <div className="fl-uptime"><i style={{width:up+'%'}}/></div>
+    <p>{f.offline_periods?`Ficou desligado ${f.offline_periods} vez(es), a maior por ${f.longest_offline_hours} h.`:'Sem interrupções registradas.'}{f.offline_now_minutes!=null&&f.offline_now_minutes>10?` Último ciclo há ${f.offline_now_minutes} min.`:''}</p>
+    <div className="fl-why-nums"><div><b>{f.tokens_evaluated}</b><small>avaliados</small></div><div><b>{f.tokens_approved}</b><small>aprovados</small></div><div><b>{f.entries}</b><small>compras</small></div></div>
+   </div>
+   <div className="fl-why-col">
+    <small>REGRAS QUE MAIS BLOQUEARAM</small>
+    {f.blockers.length?f.blockers.slice(0,7).map(b=><div className="fl-why-bar" key={b.reason}><span title={b.reason}>{b.reason}</span><div><i style={{width:b.tokens/max*100+'%'}}/></div><b>{b.tokens}</b></div>):<p>Sem avaliações no período.</p>}
+    {f.only_blocker.length>0&&<p className="fl-why-hint">Quase aprovados (só uma regra falhou): {f.only_blocker.slice(0,3).map(b=>`${b.reason} (${b.tokens})`).join(' · ')}</p>}
+    {f.entry_blocks.length>0&&<p className="fl-why-hint">Aprovados que não viraram compra: {f.entry_blocks.map(b=>`${b.reason} (${b.times})`).join(' · ')}</p>}
+   </div>
+  </div>
+ </section>
 }

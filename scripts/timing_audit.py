@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from sqlalchemy.exc import SQLAlchemyError
+
 root = Path(__file__).resolve().parents[1]
 env = root / ".env"
 if env.exists():
@@ -35,7 +37,12 @@ def load():
     )
 
 
-r = load()
+try:
+    r = load()
+except SQLAlchemyError as exc:  # e.g. database not migrated yet
+    print("\nNão foi possível ler o banco do robô:", type(exc).__name__)
+    print("Inicie o robô ao menos uma vez com:  bash scripts/start.sh\n")
+    sys.exit(1)
 print("\n=== AUDITORIA DE TEMPO — operações SHADOW encerradas ===\n")
 print(f"Operações analisadas ........ {r['trades']}")
 print(f"Resultado estimado .......... {usd(r['pnl'])}")

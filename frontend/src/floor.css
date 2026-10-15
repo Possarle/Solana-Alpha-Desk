@@ -96,3 +96,16 @@
 @media(max-width:650px){.fl-metric{flex-direction:column;align-items:flex-start;gap:3px}.fl-metric b{max-width:100%}.floor{padding:8px;gap:8px;border-radius:10px}.fl-head{grid-template-columns:1fr;gap:10px}.fl-meta{flex-wrap:wrap;gap:8px}.fl-clock{font-size:14px;padding:6px 9px}.fl-brand strong{font-size:21px}.fl-bar{width:150px}.fl-card{padding:10px}.fl-card h3{font-size:15px}.fl-card-top svg{width:26px;height:26px}.fl-tag{display:none}.fl-metric b{font-size:13px}.fl-balance-chart{height:130px}.fl-balance-kpi strong{font-size:24px}.fl-row{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,.7fr) 14px;font-size:10px;padding-left:6px}.fl-stats{grid-template-columns:repeat(2,1fr)}}
 @media(prefers-reduced-motion:reduce){.floor *{animation:none!important;transition:none!important}}
 .fl-swipe{display:none;font-family:"JetBrains Mono",monospace;font-size:9px;color:#3d0f28;text-align:center;margin:-4px 0 0}
+.fl-why-body{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:20px;padding:0 16px 16px}
+.fl-why-col>small{display:block;font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:1.3px;color:#6f6a86;margin-bottom:8px}
+.fl-why-col strong{display:block;font-size:28px;font-weight:800;color:#ece9f6;font-family:"JetBrains Mono",monospace}
+.fl-why-col strong em{font-style:normal;font-size:13px;color:#7f7997;font-weight:500}
+.fl-uptime{height:8px;border-radius:4px;background:#2a1420;margin:10px 0;overflow:hidden}.fl-uptime i{display:block;height:100%;background:#22C55E}
+.fl-why-col p{font-size:11px;color:#a8a2bf;line-height:1.6}
+.fl-why-nums{display:flex;gap:22px;margin-top:14px}.fl-why-nums b{display:block;font-size:20px;color:#ece9f6;font-family:"JetBrains Mono",monospace}.fl-why-nums small{font-size:9px;color:#6f6a86}
+.fl-why-bar{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 40px;gap:10px;align-items:center;padding:5px 0;font-size:11px;color:#cfc9e2}
+.fl-why-bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-why-bar>div{height:6px;background:#1e1b2c;border-radius:3px;overflow:hidden}.fl-why-bar i{display:block;height:100%;background:#F472B6}
+.fl-why-bar b{text-align:right;font-family:"JetBrains Mono",monospace;color:#ece9f6}
+.fl-why-hint{margin-top:10px;font-size:10px!important;color:#8b85a2!important}
+@media(max-width:900px){.fl-why-body{grid-template-columns:1fr}}

@@ -286,3 +286,21 @@ Para atualizar no Codespaces: pare o servidor (Ctrl+C), rode `git pull --ff-only
 - **Resultado por motivo de saída:** onde o dinheiro simulado está sendo ganho ou perdido.
 
 O relatório funciona também com o histórico antigo, porque usa os preços que o robô já coletou. Novas operações passam a registrar o preço da decisão e a idade do dado na entrada e na saída. Não há migração de banco nesta versão.
+
+
+## v0.6.1 — "Por que o robô não comprou?"
+
+Novo quadro no Trading Floor (e `.venv/bin/python scripts/why_no_trade.py` no terminal):
+
+- **Robô ligado:** quantas horas o robô realmente rodou nas últimas 48 h e quantas vezes parou, calculado pelos ciclos gravados.
+- **Regras que mais bloquearam:** contadas uma vez por token.
+- **Quase aprovados:** tokens que falharam em uma única regra.
+- **Aprovados que não viraram compra:** motivo do bloqueio na hora da entrada.
+
+### Importante: o Codespace desliga sozinho
+
+O GitHub para o Codespace após **30 minutos sem você interagir** (padrão). O robô rodando sozinho não conta como atividade. Quando o Codespace para, o robô para junto e nada é analisado nem comprado.
+
+- Para aumentar: foto de perfil → **Settings** → **Codespaces** → **Default idle timeout** → até **240 minutos** (4 h).
+- A conta gratuita inclui 120 horas de computação por mês; numa máquina de 2 núcleos isso dá cerca de 60 horas de uso. Não é suficiente para deixar o robô ligado 24 horas por dia.
+- Para rodar por longos períodos, use o seu próprio computador (Windows: `powershell -ExecutionPolicy Bypass -File scripts/start.ps1`; Linux/macOS: `bash scripts/start.sh`). Ele precisa ficar ligado e conectado à internet.
