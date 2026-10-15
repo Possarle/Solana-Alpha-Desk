@@ -253,3 +253,19 @@ Para atualizar: pare o servidor, execute `git pull --ff-only origin main` e `bas
 A migração `0003` adiciona a tabela `cohort` e preserva todo o histórico. Para atualizar no Codespaces: pare o servidor (Ctrl+C), rode `git pull --ff-only origin main` e `bash scripts/start.sh`.
 
 A coorte usa no máximo uma consulta ao DexScreener por minuto (até 30 tokens), reaproveitando primeiro os preços que o scanner já coletou. Nenhum dado é preenchido quando a fonte falha.
+
+
+## v0.5 — Trading Floor
+
+Nova página inicial **Trading Floor**: a mesa inteira em uma tela, no estilo de uma sala de operações.
+
+- **Topo:** perda do dia em relação ao limite, patrimônio simulado, dia e relógio UTC.
+- **8 cartões de agentes** (CHIEF, SCAN, VET, SOCIAL, SIZE, FILLS, RISK, CRAWLER), cada um com o estado real, uma métrica e a última mensagem do agente.
+- **Sala:** cada agente é um mascote numa mesa. Quando ele está trabalhando, o monitor acende, o mascote se mexe e as linhas de dados correm até o próximo agente. Quando bloqueia, o monitor fica vermelho. O balão mostra a última mensagem real.
+- **Telão:** preços coletados do token em foco, com entrada, stop e alvo quando há posição shadow. Clique nas moedas para trocar o foco.
+- **Saldo:** curva do patrimônio simulado e uma barra por ciclo (verde = teve candidato, vermelho = NO TRADE).
+- **thresholds.py:** cada filtro com a regra, o valor observado e ✓ / ✗ / ?, além do funil `filter.py`, que mostra em que etapa o token parou.
+
+Nada se mexe sem atividade real: sem dados, a tela mostra "aguardando". Os mascotes e a identidade visual são originais. Não há gráfico de candles reconstruído; o telão usa os preços que o robô coletou. No celular, deslize a sala para os lados. O Agent Desk antigo continua disponível no menu.
+
+Para atualizar no Codespaces: pare o servidor (Ctrl+C), rode `git pull --ff-only origin main` e `bash scripts/start.sh`. Não há migração de banco nesta versão.
