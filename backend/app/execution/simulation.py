@@ -20,6 +20,8 @@ def utc_day() -> str:
 
 class SimulationExecution:
     mode = "shadow"
+    account_id = 1  # each mode has its own simulated capital
+    slot = 1  # and its own single position slot
 
     def __init__(self, db):
         self.db = db
@@ -27,7 +29,7 @@ class SimulationExecution:
     def _lock(self, s):
         if self.db.engine.dialect.name == "sqlite":
             s.execute(text("BEGIN IMMEDIATE"))
-        return s.scalar(select(Account).where(Account.id == 1).with_for_update())
+        return s.scalar(select(Account).where(Account.id == self.account_id).with_for_update())
 
     def initialize(self):
         with self.db.session() as s:
@@ -35,13 +37,18 @@ class SimulationExecution:
             if account is None:
                 s.add(
                     Account(
-                        id=1, initial=D(10000), cash=D(10000), day=utc_day(), day_start=D(10000), halted=False
+                        id=self.account_id,
+                        initial=D(10000),
+                        cash=D(10000),
+                        day=utc_day(),
+                        day_start=D(10000),
+                        halted=False,
                     )
                 )
-                s.add(Equity(value=D(10000), data={"mode": "shadow"}))
+                s.add(Equity(value=D(10000), data={"mode": self.mode}))
 
     def equity(self, s, account) -> Decimal:
-        positions = s.scalars(select(Position).where(Position.active_slot == 1)).all()
+        positions = s.scalars(select(Position).where(Position.active_slot == self.slot)).all()
         return account.cash + sum((p.qty * p.mark for p in positions), D(0))
 
     def daily_breach(self, account, equity, t) -> bool:
@@ -72,7 +79,7 @@ class SimulationExecution:
             elif self.daily_breach(account, equity, t):
                 reason = "Limite diário de perda"
                 account.halted = True
-            elif s.scalar(select(Position).where(Position.active_slot == 1)):
+            elif s.scalar(select(Position).where(Position.active_slot == self.slot)):
                 reason = "Já existe posição ou encerramento pendente"
             size = position_size(float(equity), float(account.cash), m, j, t)
             if reason is None and size["slippage_bps"] > t.max_slippage_bps:
@@ -89,7 +96,7 @@ class SimulationExecution:
             qty = (budget - fee) / fill
             p = Position(
                 token_key="solana:" + m.address,
-                active_slot=1,
+                active_slot=self.slot,
                 status="open",
                 mode=self.mode,
                 qty=qty,
@@ -142,7 +149,7 @@ class SimulationExecution:
     def mark_and_manage(self, m: Market, t: Thresholds, forced_reason: str | None = None):
         with self.db.session() as s:
             account = self._lock(s)
-            p = s.scalar(select(Position).where(Position.active_slot == 1))
+            p = s.scalar(select(Position).where(Position.active_slot == self.slot))
             if not p or p.token_key != "solana:" + m.address:
                 return None
             fresh = bool(m.price and m.age_seconds() <= t.max_data_age_seconds)
@@ -230,9 +237,9 @@ class SimulationExecution:
     def reconcile(self) -> dict:
         with self.db.session() as s:
             account = self._lock(s)
-            positions = s.scalars(select(Position)).all()
+            positions = s.scalars(select(Position).where(Position.mode == self.mode)).all()
             expected = account.initial + sum((p.pnl or D(0) for p in positions if p.status == "closed"), D(0))
-            expected -= sum((p.cost for p in positions if p.active_slot == 1), D(0))
+            expected -= sum((p.cost for p in positions if p.active_slot == self.slot), D(0))
             ok = abs(expected - account.cash) < D(".000001")
             if not ok:
                 account.halted = True

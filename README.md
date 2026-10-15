@@ -304,3 +304,33 @@ O GitHub para o Codespace após **30 minutos sem você interagir** (padrão). O 
 - Para aumentar: foto de perfil → **Settings** → **Codespaces** → **Default idle timeout** → até **240 minutos** (4 h).
 - A conta gratuita inclui 120 horas de computação por mês; numa máquina de 2 núcleos isso dá cerca de 60 horas de uso. Não é suficiente para deixar o robô ligado 24 horas por dia.
 - Para rodar por longos períodos, use o seu próprio computador (Windows: `powershell -ExecutionPolicy Bypass -File scripts/start.ps1`; Linux/macOS: `bash scripts/start.sh`). Ele precisa ficar ligado e conectado à internet.
+
+
+## v0.7 — Launch Sniper (modo lançamento)
+
+Novo modo que avalia moedas do **pump.fun segundos depois de criadas**. Ele roda **em paralelo** ao modo atual, numa **conta fictícia separada** de US$ 10.000, para comparar qual rende mais. Fica na página **Launch Sniper**.
+
+**Como funciona:**
+
+1. O robô recebe, em tempo real, cada moeda nova pelo feed gratuito do PumpPortal (`subscribeNewToken`, uma única conexão).
+2. Descarta na hora as moedas em que o criador comprou mais que o limite do supply.
+3. Espera `confirm_seconds` (padrão **15 s**) e lê a curva de preço do pump.fun **direto na blockchain**, junto com o mint.
+4. Verifica o que é possível nesse momento:
+   - mint e freeze authority revogadas;
+   - programa e extensões do token (Token-2022 só com extensões de metadados);
+   - quanto SOL **outras carteiras** colocaram desde a criação;
+   - se o preço já subiu demais (market cap máximo);
+   - o impacto da própria ordem no preço.
+5. Se aprovar, simula a compra **na curva**, com a taxa documentada de 1%, e acompanha a posição a cada 8 s.
+6. Sai por stop, alvo, trailing, tempo máximo ou queda de SOL na curva. Se a moeda migrar da curva, vende no primeiro preço de pool disponível.
+
+**Limitações honestas:**
+
+- No primeiro minuto **não existe** volume, histórico de vendas, distribuição de holders nem dados sociais. Essas lacunas aparecem como desconhecidas, nunca como aprovadas.
+- O RPC público é compartilhado e verifica por padrão **6 moedas por minuto**. O pump.fun cria muito mais que isso, então é uma amostra. Com um `RPC_URL` próprio (por exemplo, o plano gratuito da Helius) dá para aumentar.
+- Outros robôs compram no mesmo segundo; o preço simulado pode ser melhor que o conseguido na vida real.
+- A estrutura da curva segue a documentação oficial do pump.fun e é rejeitada se vier diferente. **A conexão real com PumpPortal e com a curva não pôde ser testada no ambiente de desenvolvimento** (rede bloqueada); a primeira execução no Codespace ou no seu computador é o teste real.
+- Os contadores do feed reiniciam quando o robô reinicia; posições e resultados ficam no banco.
+- Para desligar: `LAUNCH_MODE=false` no `.env`, ou desmarque "Modo lançamento ligado" na página.
+
+Fontes: [PumpPortal real-time API](https://pumpportal.fun/data-api/real-time) · [pump.fun public docs](https://github.com/pump-fun/pump-public-docs/blob/main/docs/PUMP_PROGRAM_README.md)

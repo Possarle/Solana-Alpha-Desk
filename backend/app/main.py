@@ -34,7 +34,7 @@ from .funnel import funnel_report
 from .logging_setup import configure_logging
 from .performance import performance
 from .schemas import EvidenceInput, Market, WalletInput, now, valid_address
-from .thresholds import Thresholds
+from .thresholds import LaunchThresholds, Thresholds
 from .timing import timing_report
 
 
@@ -105,7 +105,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
         if lock_file:
             lock_file.close()
 
-    app = FastAPI(title="Solana Alpha Desk", version="0.6.1", lifespan=lifespan)
+    app = FastAPI(title="Solana Alpha Desk", version="0.7.0", lifespan=lifespan)
     app.state.engine, app.state.db = engine, db
     origins = [x.strip() for x in cfg.allowed_origins.split(",")]
     app.add_middleware(
@@ -142,7 +142,9 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
             for e in evaluations:
                 latest.setdefault(e.token_key, e)
             account = s.get(Account, 1)
-            positions = s.scalars(select(Position).order_by(Position.id.desc()).limit(500)).all()
+            positions = s.scalars(
+                select(Position).where(Position.mode != "launch").order_by(Position.id.desc()).limit(500)
+            ).all()
             active = [p for p in positions if p.active_slot == 1]
             equity = engine.execution.equity(s, account)
             blocks = s.scalars(select(Bench).where(Bench.until > now())).all()
@@ -208,7 +210,7 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "mode": "shadow", "version": "0.6.1"}
+        return {"status": "ok", "mode": "shadow", "version": "0.7.0"}
 
     @app.get("/api/state")
     def state():
@@ -217,6 +219,19 @@ def create_app(cfg: Settings = settings, database: Database | None = None):
     @app.get("/api/performance")
     def stats():
         return performance(db)
+
+    @app.get("/api/launch")
+    def launch_state():
+        return engine.launch.snapshot()
+
+    @app.put("/api/launch/thresholds")
+    def launch_thresholds(value: LaunchThresholds):
+        db.set_config("launch_thresholds", value.model_dump())
+        return value.model_dump()
+
+    @app.post("/api/launch/close")
+    async def launch_close():
+        return await engine.launch.risk_tick("MANUAL_EXIT") or {"status": "no_position"}
 
     @app.get("/api/funnel")
     def funnel(hours: int = 48):

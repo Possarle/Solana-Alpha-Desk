@@ -29,7 +29,9 @@ def funnel_report(db, hours: int = 48) -> dict:
         evaluations = s.scalars(
             select(Evaluation).where(Evaluation.at >= start).order_by(Evaluation.at.desc())
         ).all()
-        opened = s.scalars(select(Position).where(Position.opened_at >= start)).all()
+        opened = s.scalars(
+            select(Position).where(Position.opened_at >= start, Position.mode != "launch")
+        ).all()
         decisions = s.scalars(
             select(Decision).where(Decision.at >= start).order_by(Decision.at.desc()).limit(500)
         ).all()

@@ -18,6 +18,7 @@ from .db import Account, Database, Decision, Equity, Evaluation, Event, Observat
 from .execution.live import LiveExecution
 from .execution.simulation import ShadowExecution
 from .execution.supervised import SupervisedLive
+from .launch.desk import LaunchDesk
 from .providers.http import SafeHTTP
 from .providers.jupiter import Jupiter
 from .providers.market import DexScreener, GeckoTerminal
@@ -42,6 +43,7 @@ class Engine:
         )
         self.benches = Benches(db)
         self.cohort = CohortTracker(db)
+        self.launch = LaunchDesk(self)
         self.execution = ShadowExecution(db)
         self.live = LiveExecution(self.rpc, self.jupiter, settings.live_enabled)
         self.supervised = SupervisedLive(self)
@@ -464,7 +466,15 @@ class Engine:
         with self.db.session() as s:
             rows = s.scalars(select(Event).where(Event.id > last).order_by(Event.id).limit(5)).all()
         for row in rows:
-            if row.kind in ("approved", "position_open", "position_close", "exit_pending", "smart_cluster"):
+            if row.kind in (
+                "approved",
+                "position_open",
+                "position_close",
+                "exit_pending",
+                "smart_cluster",
+                "launch_open",
+                "launch_close",
+            ):
                 await self.telegram.request(
                     "/bot" + self.settings.telegram_bot_token.get_secret_value() + "/sendMessage",
                     method="POST",
@@ -498,8 +508,10 @@ class Engine:
 
     async def start(self):
         self.execution.initialize()
+        self.launch.execution.initialize()
         self.supervised.initialize()
         self.execution.reconcile()
+        self.launch.execution.reconcile()
         self.status = "running"
         if self.settings.enable_scheduler:
             for name, fn, interval in [
@@ -508,9 +520,13 @@ class Engine:
                 ("wallets", self.wallet_tick, self.settings.wallet_interval),
                 ("telegram", self.telegram_tick, 30),
                 ("cohort", self.cohort_tick, 60),
+                ("launch_risk", self.launch.risk_tick, 8),
                 ("live", self.supervised.poll, 15),
             ]:
                 self.tasks.append(asyncio.create_task(self._loop(name, fn, interval)))
+            if self.settings.launch_mode:
+                self.tasks.append(asyncio.create_task(self.launch.feed.run()))
+                self.tasks.append(asyncio.create_task(self._loop("launch", self.launch.tick, 1)))
 
     async def stop(self):
         for task in self.tasks:
@@ -522,4 +538,6 @@ class Engine:
             await self.telegram.close()
 
     def health(self):
-        return [p.http.health for p in (self.gecko, self.dex, self.rpc, self.jupiter)]
+        return [p.http.health for p in (self.gecko, self.dex, self.rpc, self.jupiter)] + [
+            self.launch.feed.health
+        ]

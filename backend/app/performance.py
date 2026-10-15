@@ -6,8 +6,12 @@ from .db import Equity, Order, Position
 
 def performance(db):
     with db.session() as s:
-        positions = s.scalars(select(Position).order_by(Position.id)).all()
-        curve = s.scalars(select(Equity).order_by(Equity.id.desc()).limit(3000)).all()[::-1]
+        positions = s.scalars(select(Position).where(Position.mode != "launch").order_by(Position.id)).all()
+        curve = [
+            x
+            for x in s.scalars(select(Equity).order_by(Equity.id.desc()).limit(6000)).all()[::-1]
+            if (x.data or {}).get("mode") != "launch"
+        ][-3000:]
         orders = s.scalars(select(Order)).all()
     closed = [p for p in positions if p.status == "closed"]
     pnls = [float(p.pnl) for p in closed]
@@ -31,7 +35,11 @@ def performance(db):
         "expectancy": sum(pnls) / len(pnls) if pnls else None,
         "average_win": sum(wins) / len(wins) if wins else None,
         "average_loss": sum(losses) / len(losses) if losses else None,
-        "estimated_fees": sum(o.data.get("fee", 0) for o in orders if o.data.get("status") == "simulated"),
+        "estimated_fees": sum(
+            o.data.get("fee", 0)
+            for o in orders
+            if o.data.get("status") == "simulated" and o.data.get("mode") != "launch"
+        ),
         "estimated_slippage_cost": sum(
             p.data.get("entry_slippage_cost", 0) + p.data.get("exit_slippage_cost", 0) for p in positions
         ),

@@ -91,7 +91,7 @@ def timing_report(db, limit: int = 300) -> dict:
     with db.session() as s:
         closed = s.scalars(
             select(Position)
-            .where(Position.status == "closed")
+            .where(Position.status == "closed", Position.mode != "launch")
             .order_by(Position.closed_at.desc())
             .limit(limit)
         ).all()

@@ -29,7 +29,7 @@ class Market(BaseModel):
     pool: str
     symbol: str
     name: str = ""
-    source: Literal["geckoterminal", "dexscreener"]
+    source: Literal["geckoterminal", "dexscreener", "pumpfun"]
     observed_at: float = Field(default_factory=now)
     source_updated_at: float | None = None
     source_cache_seconds: int = 60

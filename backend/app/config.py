@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     risk_interval: int = Field(15, ge=5)
     wallet_interval: int = Field(120, ge=60)
     enable_scheduler: bool = True
+    launch_mode: bool = True  # PumpPortal feed + shadow launch book (account 2)
     live_enabled: bool = False
     live_wallet_address: str = ""
     live_keypair_path: str = ""

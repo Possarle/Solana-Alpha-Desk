@@ -1,0 +1,6 @@
+.launch .metric strong.negative{color:#f87171}
+.launch-pad{padding:0 20px 18px}
+.launch-table td strong{display:block;font-size:11px;color:#ececf6}
+.launch-reason{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.launch-msg{align-self:center;color:#a8a2bf}
+.launch .position-stats{border-top:0}
